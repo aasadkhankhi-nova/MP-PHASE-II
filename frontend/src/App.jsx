@@ -6,6 +6,8 @@ import Dashboard from './screens/Dashboard.jsx'
 import Mockups from './screens/Mockups.jsx'
 import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
+import Listings from './screens/Listings.jsx'
+import Results from './screens/Results.jsx'
 
 const NAV = [
   { sec: 'Workspace' },
@@ -53,6 +55,8 @@ function Shell() {
     eff === 'mockups' ? <Mockups /> :
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
+    eff === 'listings' ? <Listings /> :
+    eff === 'results' ? <Results /> :
     <Placeholder title={current ? current.label : ''} />
 
   return (

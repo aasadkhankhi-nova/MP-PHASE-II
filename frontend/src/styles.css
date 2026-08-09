@@ -21,3 +21,6 @@ input, select { border: 1px solid var(--line); border-radius: 9px; padding: 8px 
 .box-canvas { display: block; margin: 0 auto; border-radius: 10px; cursor: crosshair; max-width: 100%; }
 .box-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 7px 8px; border-radius: 9px; }
 .box-row.sel { background: var(--accent-soft); }
+
+.pick { cursor: pointer; }
+.pick.sel { outline: 2px solid var(--accent); }

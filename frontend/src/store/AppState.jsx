@@ -109,6 +109,17 @@ export function AppStateProvider({ children }) {
         mockups: ws.mockups.map((m) => ({ ...m, setIds: (m.setIds || []).filter((x) => x !== id) })),
       })
     },
+    async updListing(id, patch, createIfMissing) {
+      const ex = ws.listings.find((l) => l.id === id)
+      let listings
+      if (!ex && createIfMissing) listings = [...ws.listings, { ...patch }]
+      else listings = ws.listings.map((l) => (l.id === id ? { ...l, ...patch } : l))
+      await saveWs(curStoreId, { ...ws, listings })
+    },
+    async delListing(id) {
+      await saveWs(curStoreId, { ...ws, listings: ws.listings.filter((l) => l.id !== id) })
+    },
+
     async toggleMockupSet(mid, sid) {
       await saveWs(curStoreId, {
         ...ws,
