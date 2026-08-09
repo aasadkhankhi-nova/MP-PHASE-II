@@ -1,0 +1,18 @@
+# Render.com blueprint — "New +" -> "Blueprint" -> is repo ko select karein,
+# ye web service khud configure ho jayegi.
+services:
+  - type: web
+    name: mp-backend
+    runtime: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        sync: false          # Render dashboard me khud paste karein (Supabase URI)
+      - key: GEMINI_API_KEY
+        sync: false          # apni Gemini key
+      - key: CORS_ORIGINS
+        value: https://aasadkhankhi-nova.github.io

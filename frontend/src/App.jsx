@@ -8,6 +8,7 @@ import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import Results from './screens/Results.jsx'
+import Seo from './screens/Seo.jsx'
 
 const NAV = [
   { sec: 'Workspace' },
@@ -57,6 +58,7 @@ function Shell() {
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
     eff === 'results' ? <Results /> :
+    eff === 'seo' ? <Seo /> :
     <Placeholder title={current ? current.label : ''} />
 
   return (

@@ -1,8 +1,13 @@
-// Central API client. VITE_API_BASE is set at build time (Render URL in production).
-export const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+// Central API client. Priority: user-saved URL (Settings) -> build-time env -> localhost.
+export function getApiBase() {
+  return localStorage.getItem('mp_api_base') || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+}
+export function setApiBase(url) {
+  localStorage.setItem('mp_api_base', String(url || '').replace(/\/+$/, ''))
+}
 
 export async function api(path, options = {}) {
-  const res = await fetch(`${API_BASE}${path}`, {
+  const res = await fetch(`${getApiBase()}${path}`, {
     headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
     ...options,
   })
@@ -11,3 +16,4 @@ export async function api(path, options = {}) {
 }
 
 export const health = () => api('/api/health')
+export const genSeo = (payload) => api('/api/seo/generate', { method: 'POST', body: JSON.stringify(payload) })
