@@ -1,9 +1,11 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Drop, Empty, confirmDel } from '../components/ui.jsx'
+import BoxEditor from './BoxEditor.jsx'
 
 export default function Mockups() {
   const app = useApp()
+  const [editId, setEditId] = useState(null)
   return (
     <>
       <div className="card">
@@ -21,7 +23,7 @@ export default function Mockups() {
                 <option value="dark">Dark product</option>
                 <option value="mixed">Mixed</option>
               </select>
-              <span className="chip">{(m.boxes || []).length} boxes</span>
+              <button className="btn sm ghost" onClick={() => setEditId(m.id)}>📦 {(m.boxes || []).length} boxes</button>
               <button className="btn sm danger" onClick={() => confirmDel(`mockup "${m.name}"`) && app.delMockup(m.id)}>✕</button>
             </div>
             {app.ws.sets.length > 0 && (
@@ -39,6 +41,7 @@ export default function Mockups() {
         ))}
       </div>
       {!app.ws.mockups.length && <Empty>Abhi koi mockup nahi. Upar drop-zone se upload karein.</Empty>}
+      {editId && <BoxEditor mockupId={editId} onClose={() => setEditId(null)} />}
     </>
   )
 }
