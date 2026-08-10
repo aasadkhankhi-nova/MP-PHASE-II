@@ -34,4 +34,30 @@ router.post('/login', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// POST /api/auth/verify { email, token }
+// User typed the 6-digit code from their email. We ask Supabase to check it.
+// If correct, Supabase returns a full session (access_token) = user is logged in.
+router.post('/verify', async (req, res) => {
+  try {
+    const { email, token } = req.body
+    const r = await fetch(gotrue('/verify'), { method: 'POST', headers: headers(), body: JSON.stringify({ type: 'signup', email, token }) })
+    const j = await r.json()
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.error_description || j.message || 'wrong or expired code' })
+    res.json({ ok: true, session: j })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/auth/resend { email }
+// Sends the verification email again (e.g. user did not receive it).
+// Note: Supabase free plan sends max ~2 emails/hour with the default sender.
+router.post('/resend', async (req, res) => {
+  try {
+    const { email } = req.body
+    const r = await fetch(gotrue('/resend'), { method: 'POST', headers: headers(), body: JSON.stringify({ type: 'signup', email }) })
+    const j = await r.json().catch(() => ({}))
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.error_description || j.message || 'resend failed' })
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
 export default router

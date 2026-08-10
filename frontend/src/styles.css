@@ -61,3 +61,12 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .lnk { color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: none; }
 
 .store-switch { width: 100%; margin: 2px 0 10px; font-weight: 600; }
+
+/* ---- Login: "ya" divider between password form and Google button ---- */
+.login-or { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--muted); font-size: 12px; }
+.login-or::before, .login-or::after { content: ''; flex: 1; height: 1px; background: var(--line, #e3e6ee); }
+
+/* ---- Login: white Google button with the colored G logo ---- */
+.btn-google { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%; padding: 10px; background: #fff; color: #333; border: 1px solid #d5d9e2; border-radius: 9px; font-size: 14.5px; font-weight: 600; cursor: pointer; }
+.btn-google:hover { background: #f6f8fc; }
+.btn-google:disabled { opacity: 0.6; cursor: default; }
