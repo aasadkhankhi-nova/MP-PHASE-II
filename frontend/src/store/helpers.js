@@ -12,6 +12,7 @@ export function readFileAsDataURL(file) {
 export function loadImg(src) {
   return new Promise((res, rej) => {
     const im = new Image()
+    if (/^https?:/.test(src)) im.crossOrigin = 'anonymous'  // cloud images: keep canvas clean
     im.onload = () => res(im)
     im.onerror = rej
     im.src = src

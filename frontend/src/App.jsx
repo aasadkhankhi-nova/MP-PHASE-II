@@ -9,9 +9,11 @@ import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import Results from './screens/Results.jsx'
 import Seo from './screens/Seo.jsx'
+import Account from './screens/Account.jsx'
 
 const NAV = [
   { sec: 'Workspace' },
+  { id: 'account', icon: '👤', label: 'Account' },
   { id: 'stores', icon: '🏬', label: 'Stores' },
   { id: 'dash', icon: '🏠', label: 'Dashboard' },
   { id: 'listings', icon: '🧾', label: 'Listings' },
@@ -59,6 +61,7 @@ function Shell() {
     eff === 'listings' ? <Listings /> :
     eff === 'results' ? <Results /> :
     eff === 'seo' ? <Seo /> :
+    eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
 
   return (
@@ -84,7 +87,10 @@ function Shell() {
       <main className="main">
         <div className="topbar">
           <h1>{current ? `${current.icon} ${current.label}` : ''}</h1>
-          {app.curStore && <span className="chip">🏬 {app.curStore.name}</span>}
+          <span style={{ display: 'flex', gap: 6 }}>
+            {app.authed && <span className={'chip ' + (app.sync.state === 'error' ? 'err' : 'ok')}>{app.sync.state === 'ok' ? '☁ synced' : app.sync.state === 'pending' ? '☁ saving…' : app.sync.state === 'pulling' ? '☁ loading…' : app.sync.state === 'error' ? '☁ error' : '☁'}</span>}
+            {app.curStore && <span className="chip">🏬 {app.curStore.name}</span>}
+          </span>
         </div>
         {app.ready ? body : <p className="muted">Loading…</p>}
       </main>
