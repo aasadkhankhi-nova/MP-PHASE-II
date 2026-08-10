@@ -1,3 +1,8 @@
+/**
+ * Mockups.jsx — Upload and manage product photos (blank mockups).
+ * Per mockup: auto light/dark tag (editable), assign to sets,
+ * and the "📦 boxes" button opens the Box Editor to draw print areas.
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Drop, Empty, confirmDel } from '../components/ui.jsx'
@@ -5,7 +10,7 @@ import BoxEditor from './BoxEditor.jsx'
 
 export default function Mockups() {
   const app = useApp()
-  const [editId, setEditId] = useState(null)
+  const [editId, setEditId] = useState(null)   // which mockup's Box Editor is open
   return (
     <>
       <div className="card">
@@ -16,8 +21,10 @@ export default function Mockups() {
         {app.ws.mockups.map((m) => (
           <div key={m.id} className="card item-card">
             <div className="thumb"><img src={m.dataUrl} alt={m.name} /></div>
+            {/* double-click the name to rename */}
             <b className="ellip" title={m.name} onDoubleClick={() => { const n = prompt('Rename', m.name); if (n) app.updMockup(m.id, { name: n }) }}>{m.name}</b>
             <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {/* light/dark/mixed — decides which design color variant is used */}
               <select value={m.colorTag} onChange={(e) => app.updMockup(m.id, { colorTag: e.target.value })}>
                 <option value="light">Light product</option>
                 <option value="dark">Dark product</option>
@@ -26,6 +33,7 @@ export default function Mockups() {
               <button className="btn sm ghost" onClick={() => setEditId(m.id)}>📦 {(m.boxes || []).length} boxes</button>
               <button className="btn sm danger" onClick={() => confirmDel(`mockup "${m.name}"`) && app.delMockup(m.id)}>✕</button>
             </div>
+            {/* set chips: click to add/remove this mockup from a set */}
             {app.ws.sets.length > 0 && (
               <div style={{ display: 'flex', gap: 5, marginTop: 8, flexWrap: 'wrap' }}>
                 {app.ws.sets.map((s) => (

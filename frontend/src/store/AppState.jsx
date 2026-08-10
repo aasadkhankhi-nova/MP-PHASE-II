@@ -1,3 +1,22 @@
+/**
+ * AppState.jsx — THE HEART OF THE APP's DATA.
+ *
+ * One React context that every screen uses (via useApp()). It owns:
+ *   - the login session
+ *   - the list of stores (one store = one Etsy shop = one isolated workspace)
+ *   - the CURRENT store's workspace: { mockups, designs, sets, listings }
+ *
+ * STORAGE STRATEGY (why two layers):
+ *   1. IndexedDB (local)  — instant loads, offline safety, and generated
+ *      photos (outputs) live ONLY here because they are large.
+ *   2. Cloud (Supabase via backend) — when logged in, every change is
+ *      auto-pushed (debounced 2.5s) and images are uploaded to Storage,
+ *      so the same data appears on any device after login.
+ *
+ * ISOLATION: everything is saved under the current store's id
+ * ("ws:<storeId>" locally, store_id column in the cloud), so different
+ * stores can never mix.
+ */
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react'
 import { kvGet, kvSet } from './idb.js'
 import { uid, readFileAsDataURL, detectTag, guessFromName } from './helpers.js'
@@ -8,7 +27,14 @@ export const useApp = () => useContext(Ctx)
 
 const EMPTY_WS = { mockups: [], designs: [], sets: [], listings: [] }
 
-// cloud row (snake_case) -> local object (camelCase)
+/**
+ * fromCloud — convert database rows (snake_case: color_tag, image_url…)
+ * into the local object shape (camelCase: colorTag, imageUrl…).
+ * Cloud images become both imageUrl AND dataUrl so <img> and canvas
+ * code can use one field everywhere.
+ * NOTE: outputs are NOT stored in the cloud (too big) — they start empty
+ * here and get re-attached from the local cache in openStore().
+ */
 const fromCloud = (ws) => ({
   mockups: (ws.mockups || []).map((m) => ({
     id: m.id, name: m.name, colorTag: m.color_tag || 'light',
@@ -28,7 +54,11 @@ const fromCloud = (ws) => ({
   })),
 })
 
-// local ws -> cloud payload (images by URL only, outputs stay local)
+/**
+ * toCloud — the reverse: local objects -> the payload the backend expects.
+ * Images travel as URLs only (never base64 — those were uploaded separately),
+ * and listing outputs are stripped (local-only by design).
+ */
 const toCloud = (ws) => ({
   mockups: ws.mockups.map((m) => ({ id: m.id, name: m.name, colorTag: m.colorTag, imageUrl: m.imageUrl || null, boxes: m.boxes || [], setIds: m.setIds || [] })),
   designs: ws.designs.map((d) => ({ id: d.id, name: d.name, placement: d.placement, variant: d.variant, dnum: d.dnum || 'single', imageUrl: d.imageUrl || null })),
@@ -37,26 +67,27 @@ const toCloud = (ws) => ({
 })
 
 export function AppStateProvider({ children }) {
-  const [session, setSess] = useState(getSession())
-  const [stores, setStores] = useState([])
-  const [curStoreId, setCurStoreId] = useState(null)
-  const [ws, setWs] = useState(EMPTY_WS)
-  const [ready, setReady] = useState(false)
-  const [sync, setSync] = useState({ state: session ? 'idle' : 'off', at: null })
-  const pushTimer = useRef(null)
+  const [session, setSess] = useState(getSession())     // login info (or null)
+  const [stores, setStores] = useState([])              // all stores of this user
+  const [curStoreId, setCurStoreId] = useState(null)    // which store is open
+  const [ws, setWs] = useState(EMPTY_WS)                // current store's workspace
+  const [ready, setReady] = useState(false)             // boot finished?
+  const [sync, setSync] = useState({ state: session ? 'idle' : 'off', at: null })  // cloud sync status for the UI chip
+  const pushTimer = useRef(null)                        // debounce timer for cloud pushes
+  // refs mirror the latest state so async callbacks never use stale values
   const wsRef = useRef(ws); wsRef.current = ws
   const storeRef = useRef(curStoreId); storeRef.current = curStoreId
 
   const authed = !!session
 
-  // ---- boot ----
+  // ---- boot: load store list (cloud if logged in) + reopen last store ----
   useEffect(() => {
     ;(async () => {
       if (session) {
         try {
           const r = await cloudStores.list()
           setStores(r.stores.map((s) => ({ id: s.id, name: s.name })))
-        } catch { setStores((await kvGet('stores')) || []) }
+        } catch { setStores((await kvGet('stores')) || []) }   // offline fallback
       } else {
         setStores((await kvGet('stores')) || [])
       }
@@ -69,7 +100,12 @@ export function AppStateProvider({ children }) {
 
   const saveLocalStores = useCallback(async (next) => { setStores(next); await kvSet('stores', next) }, [])
 
-  // ---- workspace open/pull ----
+  /**
+   * openStore — switch to a store and load its workspace.
+   * Logged out: just read the local cache.
+   * Logged in:  pull from the cloud (source of truth), re-attach locally
+   *             cached outputs to listings, then cache the merged result.
+   */
   async function openStore(id, silent) {
     setCurStoreId(id)
     await kvSet('curStore', id)
@@ -79,22 +115,24 @@ export function AppStateProvider({ children }) {
       setSync((s) => ({ ...s, state: 'pulling' }))
       const r = await cloudWs.pull(id)
       const cloud = fromCloud(r.ws)
-      // outputs live only locally — attach cached outputs to pulled listings
       const outByListing = {}
       for (const L of cached.listings || []) outByListing[L.id] = L.outputs || []
       cloud.listings = cloud.listings.map((L) => ({ ...L, outputs: outByListing[L.id] || [] }))
-      // one-time: upload any local-only images from cache that cloud is missing
       setWs(cloud)
       await kvSet('ws:' + id, cloud)
       setSync({ state: 'ok', at: Date.now() })
     } catch (e) {
       if (!silent) console.warn('pull failed', e)
-      setWs(cached)
+      setWs(cached)   // offline: keep working with the local copy
       setSync({ state: 'error', at: Date.now(), err: String(e.message || e) })
     }
   }
 
-  // ---- debounced cloud push ----
+  /**
+   * schedulePush — auto-save to the cloud, debounced.
+   * Many quick edits become ONE upload 2.5s after the last change.
+   * The ☁ chip in the top bar reflects this: pending -> ok / error.
+   */
   const schedulePush = useCallback(() => {
     if (!getSession() || !storeRef.current) return
     if (pushTimer.current) clearTimeout(pushTimer.current)
@@ -109,16 +147,20 @@ export function AppStateProvider({ children }) {
     }, 2500)
   }, [])
 
+  // saveWs — EVERY data change goes through here:
+  // update React state -> save to IndexedDB -> schedule a cloud push.
   const saveWs = useCallback(async (storeId, next) => {
     setWs(next)
     await kvSet('ws:' + storeId, next)
     schedulePush()
   }, [schedulePush])
 
+  // The public API object that all screens use via useApp().
   const api = {
     ready, stores, curStoreId, ws, session, authed, sync,
     curStore: stores.find((s) => s.id === curStoreId) || null,
 
+    // Called by the Login screen after a successful sign-in.
     async loginDone(sess) {
       setSess(sess)
       setSync({ state: 'idle', at: null })
@@ -126,7 +168,7 @@ export function AppStateProvider({ children }) {
         const r = await cloudStores.list()
         setStores(r.stores.map((s) => ({ id: s.id, name: s.name })))
         if (storeRef.current && r.stores.find((s) => s.id === storeRef.current)) await openStore(storeRef.current)
-        else if (r.stores.length) await openStore(r.stores[0].id)
+        else if (r.stores.length) await openStore(r.stores[0].id)   // auto-open first store
         else { setCurStoreId(null); setWs(EMPTY_WS); await kvSet('curStore', null) }
       } catch {}
     },
@@ -136,6 +178,7 @@ export function AppStateProvider({ children }) {
     },
     async syncNow() { if (storeRef.current) await openStore(storeRef.current) },
 
+    // ---- stores (cloud when logged in, local otherwise) ----
     async addStore(name) {
       if (authed) {
         const r = await cloudStores.create(name)
@@ -160,6 +203,9 @@ export function AppStateProvider({ children }) {
     },
     async selectStore(id) { await openStore(id) },
 
+    // ---- mockups ----
+    // On upload: read file -> auto light/dark tag -> (if logged in) upload
+    // the image to cloud Storage so other devices can see it too.
     async addMockupFiles(files) {
       let n = 0
       const items = []
@@ -182,6 +228,7 @@ export function AppStateProvider({ children }) {
       await saveWs(curStoreId, { ...wsRef.current, mockups: wsRef.current.mockups.filter((m) => m.id !== id) })
     },
 
+    // ---- designs (same upload pattern as mockups) ----
     async addDesignFiles(files) {
       let n = 0
       const items = []
@@ -204,6 +251,7 @@ export function AppStateProvider({ children }) {
       await saveWs(curStoreId, { ...wsRef.current, designs: wsRef.current.designs.filter((d) => d.id !== id) })
     },
 
+    // ---- sets (groups of mockups, e.g. "Framed 24x36") ----
     async addSet(name) {
       await saveWs(curStoreId, { ...wsRef.current, sets: [...wsRef.current.sets, { id: uid(), name: name.trim() }] })
     },
@@ -211,6 +259,7 @@ export function AppStateProvider({ children }) {
       await saveWs(curStoreId, { ...wsRef.current, sets: wsRef.current.sets.map((s) => (s.id === id ? { ...s, name } : s)) })
     },
     async delSet(id) {
+      // also detach this set from every mockup that referenced it
       await saveWs(curStoreId, {
         ...wsRef.current,
         sets: wsRef.current.sets.filter((s) => s.id !== id),
@@ -228,6 +277,7 @@ export function AppStateProvider({ children }) {
       })
     },
 
+    // ---- listings ----
     async updListing(id, patch, createIfMissing) {
       const ex = wsRef.current.listings.find((l) => l.id === id)
       let listings

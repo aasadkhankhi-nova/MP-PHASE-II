@@ -1,3 +1,12 @@
+/**
+ * App.jsx — The application SHELL.
+ * Responsibilities:
+ *   1. Login gate: no session -> show the Login screen, nothing else.
+ *   2. Sidebar: logo, store-switcher dropdown, navigation, backend status.
+ *   3. Route: decide which screen component to render.
+ *   4. Top bar: current screen title + cloud-sync chip + store chip.
+ * If no store is selected yet, the user is forced onto the Stores screen.
+ */
 import React, { useEffect, useState } from 'react'
 import { health } from './api.js'
 import { AppStateProvider, useApp } from './store/AppState.jsx'
@@ -12,6 +21,7 @@ import Seo from './screens/Seo.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
 
+// Sidebar structure: {sec} rows are section headings, others are nav items.
 const NAV = [
   { sec: 'Workspace' },
   { id: 'account', icon: '👤', label: 'Account' },
@@ -28,33 +38,37 @@ const NAV = [
   { id: 'seo', icon: '✨', label: 'SEO' },
 ]
 
+// Shown for screens that are not built yet.
 function Placeholder({ title }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>{title}</h3>
-      <p className="muted">Ye screen agle update me React me aa rahi hai. Tab tak root link wala app istemal karein.</p>
+      <p className="muted">Ye screen agle update me aa rahi hai.</p>
     </div>
   )
 }
 
 function Shell() {
   const app = useApp()
-  const [screen, setScreen] = useState('dash')
-  const [api, setApi] = useState({ state: 'checking' })
+  const [screen, setScreen] = useState('dash')          // current nav selection
+  const [api, setApi] = useState({ state: 'checking' }) // backend health for the sidebar chip
 
+  // Ping the backend once on load (shows ● backend / ○ backend offline).
   useEffect(() => {
     health()
       .then((r) => setApi({ state: 'ok', info: r }))
       .catch(() => setApi({ state: 'down' }))
   }, [])
 
+  // GATE 1: must be logged in.
   if (app.ready && !app.authed) return <Login />
 
-  // no store selected → force Stores screen
+  // GATE 2: must have a store open — otherwise force the Stores screen.
   const needStore = app.ready && !app.curStore
   const eff = needStore ? 'stores' : screen
   const current = NAV.find((n) => n.id === eff)
 
+  // Simple router: screen id -> component.
   const body =
     eff === 'stores' ? <Stores /> :
     eff === 'dash' ? <Dashboard go={setScreen} /> :
@@ -71,6 +85,7 @@ function Shell() {
     <div className="layout">
       <aside className="sidebar">
         <div className="logo">M<span>P</span> · 2.0</div>
+        {/* store switcher — one click to jump between isolated stores */}
         {app.stores.length > 0 && (
           <select
             className="store-switch"
@@ -107,6 +122,7 @@ function Shell() {
         <div className="topbar">
           <h1>{current ? `${current.icon} ${current.label}` : ''}</h1>
           <span style={{ display: 'flex', gap: 6 }}>
+            {/* live cloud-sync indicator (state comes from AppState) */}
             {app.authed && <span className={'chip ' + (app.sync.state === 'error' ? 'err' : 'ok')}>{app.sync.state === 'ok' ? '☁ synced' : app.sync.state === 'pending' ? '☁ saving…' : app.sync.state === 'pulling' ? '☁ loading…' : app.sync.state === 'error' ? '☁ error' : '☁'}</span>}
             {app.curStore && <span className="chip">🏬 {app.curStore.name}</span>}
           </span>
@@ -117,6 +133,7 @@ function Shell() {
   )
 }
 
+// Root component: provides the shared AppState to everything inside.
 export default function App() {
   return (
     <AppStateProvider>

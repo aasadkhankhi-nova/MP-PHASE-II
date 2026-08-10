@@ -1,10 +1,18 @@
-// Signup / login proxied through the backend (Supabase GoTrue REST)
+/**
+ * routes/auth.js — Signup & login endpoints.
+ * We proxy to Supabase Auth's REST API (called GoTrue) so the frontend
+ * only ever talks to OUR backend. On success the frontend receives a
+ * session (access_token) and stores it for later requests.
+ */
 import { Router } from 'express'
 
 const router = Router()
 const gotrue = (path) => `${process.env.SUPABASE_URL}/auth/v1${path}`
 const headers = () => ({ 'content-type': 'application/json', apikey: process.env.SUPABASE_ANON_KEY })
 
+// POST /api/auth/signup { email, password }
+// NOTE: Supabase may require email confirmation — in that case there is
+// no session yet and the frontend shows "check your email".
 router.post('/signup', async (req, res) => {
   try {
     const { email, password } = req.body
@@ -15,6 +23,7 @@ router.post('/signup', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// POST /api/auth/login { email, password } -> { session }
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body

@@ -1,3 +1,8 @@
+/**
+ * Dashboard.jsx — Landing screen of an open store.
+ * Shows counts for each section; clicking a card jumps to that screen
+ * (the `go` prop is App.jsx's setScreen function).
+ */
 import React from 'react'
 import { useApp } from '../store/AppState.jsx'
 
@@ -14,8 +19,7 @@ export default function Dashboard({ go }) {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🏬 {app.curStore ? app.curStore.name : '—'}</h3>
         <p className="muted">
-          React port progress: Stores ✓ · Mockups ✓ · Designs ✓ · Sets ✓ ·
-          Box editor, Generate, SEO agle updates me. Purana mukammal app root link par hai.
+          Mockups upload karein → boxes banayein → designs dalein → Listings me generate → SEO.
         </p>
       </div>
       <div className="grid">

@@ -1,3 +1,8 @@
+/**
+ * Sets.jsx — Manage sets (named groups of mockups, e.g. "Framed 24x36").
+ * Mockups are ASSIGNED to sets on the Mockups screen (chip buttons);
+ * in the Listing wizard a whole set can be selected with one click.
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Empty, confirmDel } from '../components/ui.jsx'
@@ -5,12 +10,13 @@ import { Empty, confirmDel } from '../components/ui.jsx'
 export default function Sets() {
   const app = useApp()
   const [name, setName] = useState('')
+  // how many mockups belong to a set (for the count chip)
   const count = (sid) => app.ws.mockups.filter((m) => (m.setIds || []).includes(sid)).length
   return (
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🗂️ Mockup Sets <span className="chip">{app.ws.sets.length}</span></h3>
-        <p className="muted">Set = mockups ka group (e.g. "Framed 24x36"). Mockups screen par har mockup ko set assign karein.</p>
+        <p className="muted">Set = mockups ka group. Mockups screen par har mockup ko set assign karein.</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && (app.addSet(name), setName(''))} placeholder="Set ka naam" style={{ flex: 1, minWidth: 200 }} />
           <button className="btn" onClick={() => { if (name.trim()) { app.addSet(name); setName('') } }}>＋ Create set</button>

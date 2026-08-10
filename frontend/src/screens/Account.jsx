@@ -1,3 +1,8 @@
+/**
+ * Account.jsx — Logged-in user's page: email, cloud-sync status,
+ * manual "Sync now", Logout, and the backend URL setting.
+ * (Login/signup itself happens on the Login screen — the app gate.)
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { authLogin, authSignup, getApiBase, setApiBase, health } from '../api.js'
@@ -10,6 +15,7 @@ export default function Account() {
   const [busy, setBusy] = useState(false)
   const [apiUrl, setApiUrl] = useState(getApiBase())
 
+  // Fallback login form (normally the Login gate handles this).
   const doLogin = async (signup) => {
     setMsg(null); setBusy(true)
     try {
@@ -34,11 +40,12 @@ export default function Account() {
       {app.authed ? (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>👤 {app.session.user.email}</h3>
+          {/* live sync status — mirrors the ☁ chip in the top bar */}
           <p className="muted">
             Cloud sync: <b>{app.sync.state === 'ok' ? 'sab save hai ✅' : app.sync.state === 'pending' ? 'save ho raha…' : app.sync.state === 'pulling' ? 'load ho raha…' : app.sync.state === 'error' ? '⚠ error: ' + (app.sync.err || '') : 'idle'}</b>
             {app.sync.at ? ` · last: ${new Date(app.sync.at).toLocaleTimeString()}` : ''}
           </p>
-          <p className="muted">Aap ke stores, mockups, designs aur listings ab cloud (Supabase) me save hote hain — kisi bhi device se login karein, sab wahin milega. (Generated photos abhi sirf isi browser me rehti hain.)</p>
+          <p className="muted">Stores, mockups, designs aur listings cloud (Supabase) me save hote hain — kisi bhi device se login karein, sab wahin milega. (Generated photos sirf isi browser me rehti hain.)</p>
           <div style={{ display: 'flex', gap: 8 }}>
             <button className="btn ghost" onClick={() => app.syncNow()}>↻ Sync now</button>
             <button className="btn danger" onClick={() => app.logout()}>Logout</button>
@@ -47,7 +54,6 @@ export default function Account() {
       ) : (
         <div className="card" style={{ maxWidth: 460 }}>
           <h3 style={{ marginTop: 0 }}>👤 Login / Create account</h3>
-          <p className="muted">Login karne se aap ka data cloud me save hota hai aur har device par milta hai. Baghair login ke bhi app chalta hai (sirf isi browser me).</p>
           <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', marginBottom: 8 }} />
           <input placeholder="Password (min 6)" type="password" value={pass} onChange={(e) => setPass(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
           <div style={{ display: 'flex', gap: 8 }}>

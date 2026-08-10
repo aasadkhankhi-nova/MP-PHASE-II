@@ -1,15 +1,22 @@
+/**
+ * Login.jsx — The first screen everyone sees (full-screen gate).
+ * The app cannot be used without signing in; on success App.jsx
+ * lets the user into the workspace.
+ * Auth itself happens on the backend (Supabase Auth behind /api/auth/*).
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { authLogin, authSignup } from '../api.js'
 
 export default function Login() {
   const app = useApp()
-  const [mode, setMode] = useState('in') // in | up
+  const [mode, setMode] = useState('in')   // 'in' = sign in, 'up' = create account
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
-  const [msg, setMsg] = useState(null)
-  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)     // info / error line under the button
+  const [busy, setBusy] = useState(false)  // disables the button while a request runs
 
+  // One handler for both modes; validates, calls the backend, reports errors.
   const go = async () => {
     setMsg(null); setBusy(true)
     try {
@@ -17,6 +24,7 @@ export default function Login() {
       if (pass.length < 6) throw new Error('Password kam az kam 6 harf ka ho')
       if (mode === 'up') {
         const sess = await authSignup(email.trim(), pass)
+        // Supabase may require the user to confirm their email first:
         if (!sess) { setMsg('✉️ Email par confirmation link bheja gaya hai — confirm kar ke Sign in karein.'); setMode('in'); return }
         await app.loginDone(sess)
       } else {

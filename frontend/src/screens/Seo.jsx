@@ -1,3 +1,9 @@
+/**
+ * Seo.jsx — AI SEO for each listing (title, tags, description, ALT).
+ * The design images are sent to OUR BACKEND, which calls Google Gemini.
+ * The Gemini API key lives ONLY on the server — never in the browser.
+ * Results are saved on the listing (and cloud-synced with it).
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { getApiBase, setApiBase, health, genSeo } from '../api.js'
@@ -5,11 +11,12 @@ import { Empty } from '../components/ui.jsx'
 
 export default function Seo() {
   const app = useApp()
-  const [apiUrl, setApiUrl] = useState(getApiBase())
+  const [apiUrl, setApiUrl] = useState(getApiBase())  // backend URL (rarely changed)
   const [test, setTest] = useState(null)
-  const [busyId, setBusyId] = useState(null)
+  const [busyId, setBusyId] = useState(null)          // which listing is generating
   const [err, setErr] = useState(null)
 
+  // Save + ping the backend so the user can verify the connection.
   const saveUrl = async () => {
     setApiBase(apiUrl)
     setTest('⏳')
@@ -21,6 +28,7 @@ export default function Seo() {
     }
   }
 
+  // Send up to 3 design images (base64) + category/keywords to the backend.
   const run = async (L) => {
     setErr(null)
     setBusyId(L.id)
@@ -43,7 +51,7 @@ export default function Seo() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>⚙ Backend connection</h3>
-        <p className="muted">Render par deploy hone ke baad backend ka URL yahan paste karein (e.g. https://mp-backend.onrender.com)</p>
+        <p className="muted">Default set hai; sirf tab badlein jab backend ka address badle.</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ flex: 1, minWidth: 260 }} placeholder="https://mp-backend.onrender.com" />
           <button className="btn" onClick={saveUrl}>Save & test</button>
@@ -53,10 +61,11 @@ export default function Seo() {
 
       <div className="card">
         <h3 style={{ marginTop: 0 }}>✨ Etsy SEO (Gemini — server-side)</h3>
-        <p className="muted">Har listing ke designs dekh kar AI title, tags, description aur ALT banata hai. API key sirf server par hai.</p>
+        <p className="muted">Har listing ke designs dekh kar AI title, tags, description aur ALT banata hai.</p>
         {err && <p className="muted" style={{ color: 'var(--err)' }}>⚠ {err}</p>}
       </div>
 
+      {/* one card per listing with a Generate/Regenerate button */}
       {app.ws.listings.map((L) => (
         <div key={L.id} className="card">
           <div className="topbar" style={{ margin: 0 }}>
@@ -80,6 +89,7 @@ export default function Seo() {
   )
 }
 
+/** One labeled read-only field with a Copy button (input or textarea). */
 function SeoField({ label, value, onCopy, multi }) {
   return (
     <div style={{ marginBottom: 10 }}>

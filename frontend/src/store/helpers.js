@@ -1,5 +1,13 @@
+/**
+ * helpers.js — Small utility functions shared across the app.
+ * No app logic here: only generic tools (ids, file reading, image loading)
+ * and the fixed option lists (placements, variants, design numbers).
+ */
+
+// Random unique id for new objects (good enough for client-side ids).
 export const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
 
+// Read an uploaded File as a base64 data-URL (so we can show + store it).
 export function readFileAsDataURL(file) {
   return new Promise((res, rej) => {
     const r = new FileReader()
@@ -9,17 +17,25 @@ export function readFileAsDataURL(file) {
   })
 }
 
+// Load an image and wait until it is ready to draw on a canvas.
+// For cloud (http) images we set crossOrigin so the canvas stays "clean"
+// and we are still allowed to export PNGs from it.
 export function loadImg(src) {
   return new Promise((res, rej) => {
     const im = new Image()
-    if (/^https?:/.test(src)) im.crossOrigin = 'anonymous'  // cloud images: keep canvas clean
+    if (/^https?:/.test(src)) im.crossOrigin = 'anonymous'
     im.onload = () => res(im)
     im.onerror = rej
     im.src = src
   })
 }
 
-// Auto light/dark tag from image brightness (ported from legacy app)
+/**
+ * detectTag — Guess if a mockup photo is a light or dark product.
+ * HOW: draw the photo tiny (32x32), average all pixel brightness.
+ * bright => 'light', dark => 'dark', in between => 'mixed'.
+ * The user can always correct it manually in the Mockups screen.
+ */
 export async function detectTag(dataUrl) {
   try {
     const img = await loadImg(dataUrl)
@@ -36,7 +52,11 @@ export async function detectTag(dataUrl) {
   } catch { return 'light' }
 }
 
-// Guess placement/variant from filename (ported from legacy)
+/**
+ * guessFromName — Guess placement/variant from the uploaded file name.
+ * Example: "cat-mom-light-front.png" -> placement 'front', variant 'light-design'.
+ * Just a convenience; the user can change both on the Designs screen.
+ */
 export function guessFromName(name) {
   const n = name.toLowerCase()
   const placement =
@@ -49,11 +69,19 @@ export function guessFromName(name) {
   return { placement, variant }
 }
 
+// Fixed option lists used by dropdowns in several screens.
 export const PLACEMENTS = ['front', 'back', 'sleeve-left', 'sleeve-right', 'pocket', 'full']
 export const VARIANTS = [
   ['dark-design', 'Dark design (for light products)'],
   ['light-design', 'Light design (for dark products)'],
   ['universal', 'Universal'],
 ]
+
+/**
+ * Design numbers — the manual grouping system.
+ * 'single' = the shop sells ONE artwork (its dark+light color files both stay 'single').
+ * '1'..'8' = multiple artworks (e.g. Mommy=1, Daddy=2, Kid=3).
+ * Mockup boxes can target a number, so the right artwork lands in the right box.
+ */
 export const DNUMS = ['single', '1', '2', '3', '4', '5', '6', '7', '8']
 export const dnumLabel = (v) => (v === 'single' ? '🎨 Single image' : `Design ${v}`)

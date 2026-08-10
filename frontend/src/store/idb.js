@@ -1,15 +1,31 @@
-// Tiny IndexedDB key-value store (per-key JSON). Swappable for API calls in M3/M4.
-const DB = 'mp2', STORE = 'kv'
+/**
+ * idb.js — Tiny wrapper around the browser's IndexedDB.
+ *
+ * WHY: We keep a local copy of all data (stores, mockups, designs, listings)
+ * inside the browser, so the app works instantly and even offline.
+ * When the user is logged in, the same data is ALSO synced to the cloud
+ * (see AppState.jsx). This file only handles the local part.
+ *
+ * It exposes just two functions:
+ *   kvGet(key)        -> read one value
+ *   kvSet(key, value) -> write one value
+ * Values are plain JS objects (IndexedDB stores them as-is).
+ */
+const DB = 'mp2'      // database name
+const STORE = 'kv'    // single key-value table
 
+// Open (or create) the database. Called by every get/set.
 function open() {
   return new Promise((res, rej) => {
     const r = indexedDB.open(DB, 1)
+    // First time only: create the key-value table
     r.onupgradeneeded = () => r.result.createObjectStore(STORE)
     r.onsuccess = () => res(r.result)
     r.onerror = () => rej(r.error)
   })
 }
 
+// Read one value by key. Returns undefined if the key does not exist.
 export async function kvGet(key) {
   const db = await open()
   return new Promise((res, rej) => {
@@ -19,6 +35,7 @@ export async function kvGet(key) {
   })
 }
 
+// Write one value under a key (overwrites if it already exists).
 export async function kvSet(key, val) {
   const db = await open()
   return new Promise((res, rej) => {

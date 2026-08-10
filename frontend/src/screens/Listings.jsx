@@ -1,3 +1,11 @@
+/**
+ * Listings.jsx — Create listings and GENERATE the product photos.
+ * A listing = chosen designs + chosen mockups + category/keywords.
+ * Two views in one file:
+ *   Listings   — the list of all listings (cards)
+ *   ListingWizard — one listing opened: pick designs, pick mockups
+ *                   (whole sets or singles), press Generate, see outputs.
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Empty, confirmDel } from '../components/ui.jsx'
@@ -7,8 +15,9 @@ import { uid } from '../store/helpers.js'
 
 export default function Listings() {
   const app = useApp()
-  const [openId, setOpenId] = useState(null)
+  const [openId, setOpenId] = useState(null)  // which listing is open in the wizard
 
+  // Create an empty draft listing and open it.
   const create = async () => {
     const L = { id: uid(), name: 'Listing ' + (app.ws.listings.length + 1), designIds: [], mockupIds: [], category: '', keywords: '', outputs: [], report: null, created: Date.now() }
     await app.updListing(L.id, L, true)
@@ -24,7 +33,7 @@ export default function Listings() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🧾 Listings <span className="chip">{app.ws.listings.length}</span></h3>
-        <p className="muted">Ek listing = designs + mockups ka combo → generated photos + (aage) SEO.</p>
+        <p className="muted">Ek listing = designs + mockups ka combo → generated photos + SEO.</p>
         <button className="btn" onClick={create}>＋ New listing</button>
       </div>
       <div className="grid">
@@ -48,21 +57,25 @@ export default function Listings() {
   )
 }
 
+/** The opened listing: 3 steps (designs, mockups, generate) on one page. */
 function ListingWizard({ L, onBack }) {
   const app = useApp()
-  const [prog, setProg] = useState(null)
+  const [prog, setProg] = useState(null)   // generation progress {i, n, name}
   const set = (patch) => app.updListing(L.id, patch)
 
+  // toggle helpers for the pick-grids
   const togDesign = (id) =>
     set({ designIds: L.designIds.includes(id) ? L.designIds.filter((x) => x !== id) : [...L.designIds, id] })
   const togMockup = (id) =>
     set({ mockupIds: L.mockupIds.includes(id) ? L.mockupIds.filter((x) => x !== id) : [...L.mockupIds, id] })
+  // toggle a whole SET of mockups at once
   const togSet = (sid) => {
     const ids = app.ws.mockups.filter((m) => (m.setIds || []).includes(sid)).map((m) => m.id)
     const all = ids.every((id) => L.mockupIds.includes(id))
     set({ mockupIds: all ? L.mockupIds.filter((id) => !ids.includes(id)) : [...new Set([...L.mockupIds, ...ids])] })
   }
 
+  // Run the engine (compose.js) over the selected mockups+designs.
   const generate = async () => {
     const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
     const mockups = app.ws.mockups.filter((m) => L.mockupIds.includes(m.id))
@@ -72,6 +85,7 @@ function ListingWizard({ L, onBack }) {
     if (noBox.length && !window.confirm(`${noBox.length} mockup(s) me boxes nahi hain — un par design center me lagega. Jari rakhein?`)) return
     const r = await runGeneration({ mockups, designs, onProgress: (i, n, name) => setProg({ i, n, name }) })
     setProg(null)
+    // outputs stay local (large); the "missed" report tells which boxes found no design
     await set({ outputs: r.outputs, report: { missed: r.missed, at: Date.now() } })
   }
 
@@ -88,6 +102,7 @@ function ListingWizard({ L, onBack }) {
         </div>
       </div>
 
+      {/* STEP 1: pick designs (each card shows its Design # chip) */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>1 · Designs <span className="chip">{L.designIds.length} selected</span></h3>
         <div className="grid">
@@ -104,6 +119,7 @@ function ListingWizard({ L, onBack }) {
         {!app.ws.designs.length && <Empty>Pehle Designs screen par designs upload karein.</Empty>}
       </div>
 
+      {/* STEP 2: pick mockups — set buttons toggle whole groups */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>2 · Mockups <span className="chip">{L.mockupIds.length} selected</span></h3>
         {app.ws.sets.length > 0 && (
@@ -125,6 +141,7 @@ function ListingWizard({ L, onBack }) {
         {!app.ws.mockups.length && <Empty>Pehle Mockups screen par photos upload karein.</Empty>}
       </div>
 
+      {/* STEP 3: generate + missed report */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>3 · Generate</h3>
         {prog ? (
@@ -139,6 +156,7 @@ function ListingWizard({ L, onBack }) {
         )}
       </div>
 
+      {/* results of this listing (Results screen shows all listings together) */}
       {L.outputs?.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>📦 Outputs <span className="chip ok">{L.outputs.length}</span></h3>

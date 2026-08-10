@@ -1,3 +1,8 @@
+/**
+ * Stores.jsx — Create / open / rename / delete stores.
+ * One store = one Etsy shop = one fully ISOLATED workspace.
+ * If no store is selected, App.jsx forces the user onto this screen.
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { confirmDel } from '../components/ui.jsx'
@@ -6,6 +11,7 @@ export default function Stores() {
   const app = useApp()
   const [name, setName] = useState('')
 
+  // Create a store and immediately open it.
   const create = async () => {
     if (!name.trim()) return
     const st = await app.addStore(name)
@@ -29,6 +35,7 @@ export default function Stores() {
           <button className="btn" onClick={create}>＋ Create store</button>
         </div>
       </div>
+      {/* One card per store: Open / Rename / Delete */}
       <div className="grid">
         {app.stores.map((s) => (
           <div key={s.id} className={'card store-card' + (app.curStoreId === s.id ? ' sel' : '')}>

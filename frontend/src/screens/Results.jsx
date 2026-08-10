@@ -1,3 +1,9 @@
+/**
+ * Results.jsx — All generated photos from every listing, in one place.
+ * Single downloads + "Download all" as a ZIP (folder per listing).
+ * NOTE: outputs live only in this browser (IndexedDB) — they are large,
+ * so they are not cloud-synced. The ZIP is the way to take them out.
+ */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Empty } from '../components/ui.jsx'
@@ -5,8 +11,11 @@ import { Empty } from '../components/ui.jsx'
 export default function Results() {
   const app = useApp()
   const [busy, setBusy] = useState(false)
+  // flatten: every output of every listing, remembering its listing name
   const all = app.ws.listings.flatMap((L) => (L.outputs || []).map((o) => ({ ...o, listing: L.name })))
 
+  // Build one ZIP with a folder per listing. jszip is lazy-loaded
+  // (dynamic import) so the main app bundle stays small.
   const zipAll = async () => {
     if (!all.length) return
     setBusy(true)

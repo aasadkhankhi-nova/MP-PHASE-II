@@ -1,20 +1,36 @@
+/**
+ * BoxEditor.jsx — Draw PRINT-AREA BOXES on a mockup photo (modal).
+ *
+ * A "box" tells the generator WHERE a design goes and WHICH design:
+ *   { id, name (placement), tag (dark/light area), dnum (design # target),
+ *     x, y, w, h (0..1 fractions of the photo), rot (degrees), pad }
+ *
+ * Mouse rules on the canvas:
+ *   drag on empty area  -> create a new box
+ *   drag inside a box   -> move it
+ *   drag the blue corner-> resize (bottom-right handle)
+ *   Ctrl+Z              -> undo (snapshot history)
+ * Nothing is saved until the user presses "Save boxes".
+ */
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { loadImg, uid, PLACEMENTS } from '../store/helpers.js'
 import { dnumLabel, DNUMS } from '../store/helpers.js'
 
-const HANDLE = 9
+const HANDLE = 9  // px size of the resize handle
 
 export default function BoxEditor({ mockupId, onClose }) {
   const app = useApp()
   const mock = app.ws.mockups.find((m) => m.id === mockupId)
   const cvRef = useRef(null)
   const imgRef = useRef(null)
+  // local copy of boxes — edits stay here until Save
   const [boxes, setBoxes] = useState(() => (mock?.boxes || []).map((b) => ({ ...b })))
-  const [sel, setSel] = useState(boxes[0]?.id || null)
-  const [hist, setHist] = useState([])
-  const dragRef = useRef(null)
+  const [sel, setSel] = useState(boxes[0]?.id || null)   // selected box id
+  const [hist, setHist] = useState([])                   // undo snapshots (JSON strings)
+  const dragRef = useRef(null)                           // current drag operation
 
+  // Take a snapshot BEFORE a change so Ctrl+Z can restore it.
   const snap = useCallback(() => {
     setHist((h) => [...h.slice(-24), JSON.stringify(boxes)])
   }, [boxes])
@@ -27,7 +43,7 @@ export default function BoxEditor({ mockupId, onClose }) {
     })
   }, [])
 
-  // load image once
+  // Load the mockup photo once when the modal opens.
   useEffect(() => {
     let live = true
     if (mock) loadImg(mock.dataUrl).then((im) => { if (live) { imgRef.current = im; draw() } })
@@ -35,6 +51,7 @@ export default function BoxEditor({ mockupId, onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mockupId])
 
+  // Redraw canvas: photo + every box (selected box has solid border + handle).
   const draw = useCallback(() => {
     const cv = cvRef.current, img = imgRef.current
     if (!cv || !img) return
@@ -57,7 +74,7 @@ export default function BoxEditor({ mockupId, onClose }) {
       ctx.fillStyle = 'rgba(79,109,245,.10)'
       ctx.fillRect(-w / 2, -h / 2, w, h)
       ctx.restore()
-      // label
+      // small label above the box: placement · area · design#
       ctx.fillStyle = '#4f6df5'
       ctx.font = 'bold 12px sans-serif'
       ctx.fillText(`${b.name || '?'} · ${b.tag || '?'}${b.dnum && b.dnum !== 'any' ? ' · ' + dnumLabel(b.dnum) : ''}`, x + 4, y - 5)
@@ -70,25 +87,25 @@ export default function BoxEditor({ mockupId, onClose }) {
 
   useEffect(() => { draw() }, [draw])
 
+  // Convert a mouse event to canvas pixel coordinates.
   const pos = (e) => {
     const cv = cvRef.current
     const r = cv.getBoundingClientRect()
     return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]
   }
 
+  // Decide what the mouse press starts: resize / move / create-new.
   const onDown = (e) => {
     const cv = cvRef.current
     const [px, py] = pos(e)
-    // resize handle of selected?
     const s = boxes.find((b) => b.id === sel)
-    if (s) {
+    if (s) {  // near the selected box's bottom-right handle? -> resize
       const hx = (s.x + s.w) * cv.width, hy = (s.y + s.h) * cv.height
       if (Math.abs(px - hx) < HANDLE + 3 && Math.abs(py - hy) < HANDLE + 3) {
         snap(); dragRef.current = { mode: 'resize', id: s.id }; return
       }
     }
-    // inside an existing box? (topmost)
-    for (let i = boxes.length - 1; i >= 0; i--) {
+    for (let i = boxes.length - 1; i >= 0; i--) {  // inside a box? -> move (topmost wins)
       const b = boxes[i]
       const x = b.x * cv.width, y = b.y * cv.height, w = b.w * cv.width, h = b.h * cv.height
       if (px >= x && px <= x + w && py >= y && py <= y + h) {
@@ -97,7 +114,7 @@ export default function BoxEditor({ mockupId, onClose }) {
         return
       }
     }
-    // empty area → create new box
+    // empty area -> start creating a new box (drag sets its size)
     snap()
     const nb = { id: uid(), name: 'front', tag: mock.colorTag === 'dark' ? 'dark' : 'light', dnum: 'any', x: px / cv.width, y: py / cv.height, w: 0.01, h: 0.01, rot: 0, pad: 0 }
     setBoxes((bs) => [...bs, nb]); setSel(nb.id)
@@ -112,6 +129,7 @@ export default function BoxEditor({ mockupId, onClose }) {
     setBoxes((bs) => bs.map((b) => {
       if (b.id !== d.id) return b
       if (d.mode === 'move') {
+        // clamp so the box stays inside the photo
         return { ...b, x: Math.max(0, Math.min(1 - b.w, (px - d.dx) / cv.width)), y: Math.max(0, Math.min(1 - b.h, (py - d.dy) / cv.height)) }
       }
       return { ...b, w: Math.max(0.02, px / cv.width - b.x), h: Math.max(0.02, py / cv.height - b.y) }
@@ -123,6 +141,7 @@ export default function BoxEditor({ mockupId, onClose }) {
   const upd = (id, patch) => setBoxes((bs) => bs.map((b) => (b.id === id ? { ...b, ...patch } : b)))
   const del = (id) => { snap(); setBoxes((bs) => bs.filter((b) => b.id !== id)); if (sel === id) setSel(null) }
 
+  // Validate then write boxes back onto the mockup (this also cloud-syncs).
   const save = async () => {
     const bad = boxes.find((b) => !b.name || !b.tag)
     if (bad) { alert('Har box ka placement aur color tag set karein.'); return }
@@ -130,6 +149,7 @@ export default function BoxEditor({ mockupId, onClose }) {
     onClose()
   }
 
+  // Global Ctrl+Z while the modal is open.
   useEffect(() => {
     const key = (e) => { if ((e.ctrlKey || e.metaKey) && e.key === 'z') { e.preventDefault(); undo() } }
     window.addEventListener('keydown', key)
@@ -156,6 +176,7 @@ export default function BoxEditor({ mockupId, onClose }) {
           onMouseUp={onUp}
           onMouseLeave={onUp}
         />
+        {/* settings row for every box */}
         <div style={{ marginTop: 10 }}>
           {boxes.map((b, i) => (
             <div key={b.id} className={'box-row' + (sel === b.id ? ' sel' : '')} onClick={() => setSel(b.id)}>
@@ -167,6 +188,7 @@ export default function BoxEditor({ mockupId, onClose }) {
                 <option value="dark">Dark area</option>
                 <option value="light">Light area</option>
               </select>
+              {/* which design number should land in this box */}
               <select value={b.dnum || 'any'} onChange={(e) => upd(b.id, { dnum: e.target.value })} title="Design #">
                 <option value="any">Any (auto match)</option>
                 {DNUMS.map((n) => <option key={n} value={n}>{dnumLabel(n)}</option>)}

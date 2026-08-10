@@ -1,3 +1,11 @@
+/**
+ * Designs.jsx — Upload and manage artwork PNGs.
+ * Per design, three dropdowns drive the matching engine (compose.js):
+ *   placement (front/back/...), color variant (dark/light/universal),
+ *   and Design # ('Single image' or 1..8 for multi-artwork shops).
+ * IMPORTANT RULE: the dark + light color files of the SAME artwork
+ * should be given the SAME Design # — then they act as one design.
+ */
 import React from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Drop, Empty, confirmDel } from '../components/ui.jsx'
@@ -14,6 +22,7 @@ export default function Designs() {
       <div className="grid">
         {app.ws.designs.map((d) => (
           <div key={d.id} className="card item-card">
+            {/* light designs preview on a dark tile so they stay visible */}
             <div className="thumb" style={{ background: d.variant === 'light-design' ? '#1e293b' : '#f1f3f9' }}>
               <img src={d.dataUrl} alt={d.name} style={{ objectFit: 'contain' }} />
             </div>

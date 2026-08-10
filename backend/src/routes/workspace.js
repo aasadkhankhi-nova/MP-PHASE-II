@@ -1,4 +1,14 @@
-// Full-workspace sync per store: GET pulls, PUT replaces (transaction).
+/**
+ * routes/workspace.js — Whole-workspace sync for one store.
+ *   GET  /api/workspace/:storeId  -> download everything (pull)
+ *   PUT  /api/workspace/:storeId  -> replace everything (push)
+ *
+ * WHY replace-all: the frontend auto-saves the complete workspace
+ * (debounced), which is much simpler and safer than tracking individual
+ * row changes. The PUT runs inside a TRANSACTION: delete old rows +
+ * insert new ones — either everything succeeds or nothing changes.
+ * Images are URLs only (uploaded separately via /api/upload).
+ */
 import { Router } from 'express'
 import { pool, q } from '../db.js'
 import { requireUser } from '../auth.js'
@@ -6,6 +16,7 @@ import { requireUser } from '../auth.js'
 const router = Router()
 router.use(requireUser)
 
+// Safety check used by both endpoints: does this store belong to this user?
 async function ownStore(storeId, userId) {
   const r = await q('select id from stores where id=$1 and user_id=$2', [storeId, userId])
   return r.length > 0
@@ -15,6 +26,7 @@ router.get('/:storeId', async (req, res) => {
   try {
     const { storeId } = req.params
     if (!(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    // fetch all four tables in parallel
     const [mockups, designs, sets, listings] = await Promise.all([
       q('select * from mockups where store_id=$1 order by created_at', [storeId]),
       q('select * from designs where store_id=$1 order by created_at', [storeId]),
@@ -31,7 +43,8 @@ router.put('/:storeId', async (req, res) => {
     const { storeId } = req.params
     if (!(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const { mockups = [], designs = [], sets = [], listings = [] } = req.body.ws || {}
-    await client.query('begin')
+
+    await client.query('begin')  // ---- transaction start ----
     for (const t of ['mockups', 'designs', 'sets', 'listings'])
       await client.query(`delete from ${t} where store_id=$1`, [storeId])
     for (const m of mockups)
@@ -51,10 +64,11 @@ router.put('/:storeId', async (req, res) => {
         'insert into listings (id, store_id, name, category, keywords, design_ids, mockup_ids, seo, status) values ($1,$2,$3,$4,$5,$6,$7,$8,$9)',
         [L.id, storeId, L.name || '', L.category || '', L.keywords || '', JSON.stringify(L.designIds || []), JSON.stringify(L.mockupIds || []), L.seo ? JSON.stringify(L.seo) : null, L.status || 'draft']
       )
-    await client.query('commit')
+    await client.query('commit')  // ---- transaction end ----
+
     res.json({ ok: true, counts: { mockups: mockups.length, designs: designs.length, sets: sets.length, listings: listings.length } })
   } catch (e) {
-    await client.query('rollback').catch(() => {})
+    await client.query('rollback').catch(() => {})  // undo everything on any error
     res.status(500).json({ ok: false, error: e.message })
   } finally {
     client.release()
