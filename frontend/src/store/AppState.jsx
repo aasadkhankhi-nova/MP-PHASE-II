@@ -126,6 +126,7 @@ export function AppStateProvider({ children }) {
         const r = await cloudStores.list()
         setStores(r.stores.map((s) => ({ id: s.id, name: s.name })))
         if (storeRef.current && r.stores.find((s) => s.id === storeRef.current)) await openStore(storeRef.current)
+        else if (r.stores.length) await openStore(r.stores[0].id)
         else { setCurStoreId(null); setWs(EMPTY_WS); await kvSet('curStore', null) }
       } catch {}
     },

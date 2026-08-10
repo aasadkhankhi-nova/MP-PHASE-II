@@ -71,6 +71,22 @@ function Shell() {
     <div className="layout">
       <aside className="sidebar">
         <div className="logo">M<span>P</span> · 2.0</div>
+        {app.stores.length > 0 && (
+          <select
+            className="store-switch"
+            value={app.curStoreId || ''}
+            onChange={(e) => {
+              if (e.target.value === '__new') { setScreen('stores') }
+              else if (e.target.value) { app.selectStore(e.target.value); if (screen === 'stores') setScreen('dash') }
+            }}
+          >
+            {!app.curStoreId && <option value="">— store chunein —</option>}
+            {app.stores.map((s) => (
+              <option key={s.id} value={s.id}>🏬 {s.name}</option>
+            ))}
+            <option value="__new">＋ New store…</option>
+          </select>
+        )}
         {NAV.map((n, i) =>
           n.sec ? (
             <div key={i} className="nav-sec">{n.sec}</div>
