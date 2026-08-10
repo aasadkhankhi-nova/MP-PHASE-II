@@ -10,6 +10,7 @@ import Listings from './screens/Listings.jsx'
 import Results from './screens/Results.jsx'
 import Seo from './screens/Seo.jsx'
 import Account from './screens/Account.jsx'
+import Login from './screens/Login.jsx'
 
 const NAV = [
   { sec: 'Workspace' },
@@ -47,6 +48,8 @@ function Shell() {
       .catch(() => setApi({ state: 'down' }))
   }, [])
 
+  if (app.ready && !app.authed) return <Login />
+
   // no store selected → force Stores screen
   const needStore = app.ready && !app.curStore
   const eff = needStore ? 'stores' : screen
@@ -67,7 +70,7 @@ function Shell() {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <div className="logo">M<span>P</span> · Phase II</div>
+        <div className="logo">M<span>P</span> · 2.0</div>
         {NAV.map((n, i) =>
           n.sec ? (
             <div key={i} className="nav-sec">{n.sec}</div>

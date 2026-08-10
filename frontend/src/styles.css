@@ -49,3 +49,13 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 
 .pick { cursor: pointer; }
 .pick.sel { outline: 2px solid var(--accent); }
+
+/* Login gate */
+.login-gate { position: fixed; inset: 0; background: linear-gradient(135deg, #10142a, #1b2145 60%, #10142a); display: flex; align-items: center; justify-content: center; padding: 18px; z-index: 100; }
+.login-card { background: #fff; border-radius: 18px; padding: 26px; width: 100%; max-width: 400px; box-shadow: 0 24px 70px rgba(0,0,0,.45); }
+.login-card input { width: 100%; margin-top: 10px; padding: 11px 12px; }
+.login-card .btn { margin-top: 14px; }
+.login-logo { font-size: 21px; font-weight: 800; display: flex; align-items: center; gap: 9px; }
+.login-badge-icon { background: var(--accent); color: #fff; border-radius: 10px; padding: 5px 9px; font-size: 16px; }
+.login-badge { background: var(--accent); color: #fff; border-radius: 14px; font-size: 11.5px; padding: 3px 9px; }
+.lnk { color: var(--accent); cursor: pointer; font-weight: 600; text-decoration: none; }

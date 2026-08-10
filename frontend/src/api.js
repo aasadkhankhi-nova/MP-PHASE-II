@@ -1,6 +1,6 @@
 // Central API client + auth session.
 export function getApiBase() {
-  return localStorage.getItem('mp_api_base') || import.meta.env.VITE_API_BASE || 'http://localhost:4000'
+  return localStorage.getItem('mp_api_base') || import.meta.env.VITE_API_BASE || 'https://mp-backend-rw3i.onrender.com'
 }
 export function setApiBase(url) {
   localStorage.setItem('mp_api_base', String(url || '').replace(/\/+$/, ''))
