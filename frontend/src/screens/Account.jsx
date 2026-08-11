@@ -45,7 +45,8 @@ export default function Account() {
     <>
       {app.authed ? (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>👤 {app.session.user.email}</h3>
+          <h3 style={{ marginTop: 0 }}>👤 {app.session.user.name || app.session.user.email}</h3>
+          {app.session.user.name && <p className="muted" style={{ marginTop: -6 }}>{app.session.user.email}</p>}
           {/* live sync status — mirrors the ☁ chip in the top bar */}
           <p className="muted">
             Cloud sync: <b>{app.sync.state === 'ok' ? 'sab save hai ✅' : app.sync.state === 'pending' ? 'save ho raha…' : app.sync.state === 'pulling' ? 'load ho raha…' : app.sync.state === 'error' ? '⚠ error: ' + (app.sync.err || '') : 'idle'}</b>

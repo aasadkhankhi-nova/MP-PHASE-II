@@ -99,7 +99,8 @@ export function captureOAuthSession() {
   let user = {}
   try {
     const payload = JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
-    user = { id: payload.sub, email: payload.email }
+    const m = payload.user_metadata || {}
+    user = { id: payload.sub, email: payload.email, name: m.full_name || m.name || '' }
   } catch {}
   const sess = { access_token: token, user }
   setSession(sess)
@@ -115,17 +116,29 @@ export function takeOAuthError() {
   return e
 }
 
+// ---- bot protection (Cloudflare Turnstile — Supabase's supported captcha) ----
+// Leave '' to keep captcha OFF. To switch it on: make a free Turnstile
+// widget at dash.cloudflare.com, paste its PUBLIC "site key" here, and put
+// its SECRET key in Supabase -> Auth -> Attack Protection -> Captcha.
+export const TURNSTILE_SITE_KEY = ''
+
 // ---- auth (email + password, backed by Supabase Auth) ----
-export async function authLogin(email, password) {
-  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) })
-  const sess = { access_token: r.session.access_token, user: { id: r.session.user?.id, email: r.session.user?.email || email } }
+// Pull a friendly display name out of Supabase's user object (if any).
+const nameOf = (u) => u?.user_metadata?.full_name || [u?.user_metadata?.first_name, u?.user_metadata?.last_name].filter(Boolean).join(' ') || ''
+
+export async function authLogin(email, password, captchaToken = '') {
+  const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, captchaToken }) })
+  const u = r.session.user
+  const sess = { access_token: r.session.access_token, user: { id: u?.id, email: u?.email || email, name: nameOf(u) } }
   setSession(sess)
   return sess
 }
-export async function authSignup(email, password) {
-  const r = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) })
+// meta = profile fields saved on the account (first_name, last_name, dob, full_name)
+export async function authSignup(email, password, meta = {}, captchaToken = '') {
+  const r = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, meta, captchaToken }) })
   if (r.session?.access_token) {
-    const sess = { access_token: r.session.access_token, user: { id: r.session.user?.id || r.user?.id, email } }
+    const u = r.session.user || r.user
+    const sess = { access_token: r.session.access_token, user: { id: u?.id, email, name: nameOf(u) || meta.full_name || '' } }
     setSession(sess)
     return sess
   }

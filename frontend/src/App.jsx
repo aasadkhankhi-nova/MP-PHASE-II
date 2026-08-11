@@ -134,8 +134,9 @@ function Shell() {
               onClick={() => setScreen('account')}
               title="Account settings"
             >
-              <span className="avatar">{(app.session.user.email || '?').slice(0, 2).toUpperCase()}</span>
-              <span className="side-user-name">{(app.session.user.email || '').split('@')[0]}</span>
+              {/* avatar shows initials — from the user's name if we have it, else the email */}
+              <span className="avatar">{(app.session.user.name || app.session.user.email || '?').slice(0, 2).toUpperCase()}</span>
+              <span className="side-user-name">{app.session.user.name || (app.session.user.email || '').split('@')[0]}</span>
               <span className="side-user-gear">⚙</span>
             </button>
           )}
