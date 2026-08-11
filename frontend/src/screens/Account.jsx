@@ -246,6 +246,10 @@ function EtsyConnect({ storeId, storeName }) {
         </>
       )}
       {eMsg && <p className="muted" style={{ marginTop: 8 }}>{eMsg}</p>}
+      {/* Required by Etsy's API terms — must be shown in any app using their API */}
+      <p className="muted" style={{ marginTop: 10, fontSize: 11.5 }}>
+        The term 'Etsy' is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.
+      </p>
     </div>
   )
 }
