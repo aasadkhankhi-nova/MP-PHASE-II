@@ -68,7 +68,8 @@ export default function Login() {
   return (
     <div className="login-gate">
       <div className="login-card">
-        <div className="login-logo"><span className="login-badge-icon">MP</span> Mockup Platform <span className="login-badge">2.0</span></div>
+        <div className="login-logo"><span className="login-badge-icon">✈</span> ListPilot</div>
+        <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>Design to listing — on autopilot</p>
 
         {mode === 'verify' ? (
           <>

@@ -91,7 +91,7 @@ function Shell() {
   return (
     <div className="layout">
       <aside className="sidebar">
-        <div className="logo">M<span>P</span> · 2.0</div>
+        <div className="logo">✈ List<span>Pilot</span></div>
         {/* store switcher — one click to jump between isolated stores */}
         {app.stores.length > 0 && (
           <select
