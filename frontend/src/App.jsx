@@ -10,21 +10,22 @@
 import React, { useEffect, useState } from 'react'
 import { health } from './api.js'
 import { AppStateProvider, useApp } from './store/AppState.jsx'
-import Stores from './screens/Stores.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import Mockups from './screens/Mockups.jsx'
 import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import Results from './screens/Results.jsx'
-import Seo from './screens/Seo.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
 
 // Sidebar structure: {sec} rows are section headings, others are nav items.
+// NOTE: "Stores" and "SEO" are NOT here on purpose —
+//   - store add/rename/delete lives in Settings (user chip at the bottom),
+//     and quick store switching is the dropdown at the top of the sidebar
+//   - SEO happens automatically inside "Create listing" (Listings screen)
 const NAV = [
   { sec: 'Workspace' },
-  { id: 'stores', icon: '🏬', label: 'Stores' },
   { id: 'dash', icon: '🏠', label: 'Dashboard' },
   { id: 'listings', icon: '🧾', label: 'Listings' },
   { sec: 'Library' },
@@ -34,7 +35,6 @@ const NAV = [
   { sec: 'Production' },
   { id: 'generate', icon: '⚙️', label: 'Generate' },
   { id: 'results', icon: '📦', label: 'Results' },
-  { id: 'seo', icon: '✨', label: 'SEO' },
 ]
 
 // Shown for screens that are not built yet.
@@ -69,23 +69,22 @@ function Shell() {
   // GATE 1: must be logged in.
   if (app.ready && !app.authed) return <Login />
 
-  // GATE 2: must have a store open — otherwise force the Stores screen.
+  // GATE 2: must have a store open — otherwise force Settings,
+  // where the store list (create/rename/delete) now lives.
   const needStore = app.ready && !app.curStore
-  const eff = needStore ? 'stores' : screen
-  // Account is not in the NAV list any more (it opens from the user chip
-  // at the bottom of the sidebar), so give it its own title here.
-  const current = NAV.find((n) => n.id === eff) || (eff === 'account' ? { icon: '👤', label: 'Account' } : null)
+  const eff = needStore ? 'account' : screen
+  // Settings is not in the NAV list (it opens from the user chip at the
+  // bottom of the sidebar), so give it its own title here.
+  const current = NAV.find((n) => n.id === eff) || (eff === 'account' ? { icon: '⚙️', label: 'Settings' } : null)
 
   // Simple router: screen id -> component.
   const body =
-    eff === 'stores' ? <Stores /> :
     eff === 'dash' ? <Dashboard go={setScreen} /> :
     eff === 'mockups' ? <Mockups /> :
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
     eff === 'results' ? <Results /> :
-    eff === 'seo' ? <Seo /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
 
@@ -99,8 +98,9 @@ function Shell() {
             className="store-switch"
             value={app.curStoreId || ''}
             onChange={(e) => {
-              if (e.target.value === '__new') { setScreen('stores') }
-              else if (e.target.value) { app.selectStore(e.target.value); if (screen === 'stores') setScreen('dash') }
+              // "＋ New store…" opens Settings, where stores are managed
+              if (e.target.value === '__new') { setScreen('account') }
+              else if (e.target.value) { app.selectStore(e.target.value); if (screen === 'account') setScreen('dash') }
             }}
           >
             {!app.curStoreId && <option value="">— store chunein —</option>}

@@ -1,10 +1,14 @@
 /**
- * Listings.jsx — Create listings and GENERATE the product photos.
+ * Listings.jsx — Create listings: photos + SEO, all in ONE press.
  * A listing = chosen designs + chosen mockups + category/keywords.
+ * The wizard's final "Create listing" button does EVERYTHING:
+ *   1. generates the product photos (compose.js engine)
+ *   2. generates the Etsy SEO (title, tags, description, ALT) via AI
+ * There is no separate SEO screen/button — SEO is part of creating a listing.
  * Two views in one file:
- *   Listings   — the list of all listings (cards)
+ *   Listings   — the list of all listings (cards, with copyable SEO fields)
  *   ListingWizard — one listing opened: pick designs, pick mockups
- *                   (whole sets or singles), press Generate, see outputs.
+ *                   (whole sets or singles), press Create listing.
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
@@ -12,6 +16,7 @@ import { Empty, confirmDel } from '../components/ui.jsx'
 import { dnumLabel } from '../store/helpers.js'
 import { desDnum, runGeneration } from '../store/compose.js'
 import { uid } from '../store/helpers.js'
+import { genSeo, getGeminiKey } from '../api.js'
 
 export default function Listings() {
   const app = useApp()
@@ -44,6 +49,7 @@ export default function Listings() {
               <span className="chip">{L.designIds.length} designs</span>
               <span className="chip">{L.mockupIds.length} mockups</span>
               <span className={'chip' + (L.outputs?.length ? ' ok' : '')}>{L.outputs?.length || 0} outputs</span>
+              {L.seo && <span className="chip ok">✨ SEO</span>}
             </div>
             <div style={{ display: 'flex', gap: 6 }}>
               <button className="btn sm" onClick={() => setOpenId(L.id)}>Open</button>
@@ -75,18 +81,35 @@ function ListingWizard({ L, onBack }) {
     set({ mockupIds: all ? L.mockupIds.filter((id) => !ids.includes(id)) : [...new Set([...L.mockupIds, ...ids])] })
   }
 
-  // Run the engine (compose.js) over the selected mockups+designs.
-  const generate = async () => {
+  // "Create listing" = the ONE button that does the whole job:
+  // photos first (compose.js engine), then Etsy SEO (AI) — no separate SEO step.
+  const createListing = async () => {
     const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
     const mockups = app.ws.mockups.filter((m) => L.mockupIds.includes(m.id))
     if (!designs.length) return alert('Kam az kam 1 design select karein')
     if (!mockups.length) return alert('Kam az kam 1 mockup select karein')
     const noBox = mockups.filter((m) => !(m.boxes || []).length)
     if (noBox.length && !window.confirm(`${noBox.length} mockup(s) me boxes nahi hain — un par design center me lagega. Jari rakhein?`)) return
-    const r = await runGeneration({ mockups, designs, onProgress: (i, n, name) => setProg({ i, n, name }) })
-    setProg(null)
+
+    // --- part 1: product photos ---
+    const r = await runGeneration({ mockups, designs, onProgress: (i, n, name) => setProg({ label: `${i + 1} / ${n} — ${name}` }) })
     // outputs stay local (large); the "missed" report tells which boxes found no design
     await set({ outputs: r.outputs, report: { missed: r.missed, at: Date.now() } })
+
+    // --- part 2: Etsy SEO (needs the user's Gemini key from Settings) ---
+    let seoErr = null
+    if (getGeminiKey()) {
+      setProg({ label: '✨ SEO ban raha hai…' })
+      try {
+        const images = designs.slice(0, 3).map((d) => d.dataUrl.split(',')[1])
+        const res = await genSeo({ images, category: L.category || 'Canvas Wall Art', keywords: L.keywords || '' })
+        await set({ seo: res.seo })
+      } catch (e) { seoErr = String(e.message || e) }
+    } else {
+      seoErr = 'API key nahi mili — Settings (apne naam par click) me Gemini key dalein, phir dobara Create listing dabayein.'
+    }
+    await set({ seoErr })
+    setProg(null)
   }
 
   return (
@@ -141,21 +164,35 @@ function ListingWizard({ L, onBack }) {
         {!app.ws.mockups.length && <Empty>Pehle Mockups screen par photos upload karein.</Empty>}
       </div>
 
-      {/* STEP 3: generate + missed report */}
+      {/* STEP 3: the one big button — photos + SEO together */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>3 · Generate</h3>
+        <h3 style={{ marginTop: 0 }}>3 · Create listing</h3>
+        <p className="muted">Ye button sab kuch karega: {L.mockupIds.length} product photos + Etsy SEO (title, tags, description, ALT).</p>
         {prog ? (
-          <p className="muted">⏳ {prog.i + 1} / {prog.n} — {prog.name}</p>
+          <p className="muted">⏳ {prog.label}</p>
         ) : (
-          <button className="btn" onClick={generate}>⚙️ Generate {L.mockupIds.length} photos</button>
+          <button className="btn" onClick={createListing}>🧾 Create listing</button>
         )}
         {L.report && L.report.missed.length > 0 && (
           <p className="muted" style={{ color: 'var(--warn)', marginTop: 10 }}>
             ⚠ {L.report.missed.length} box(es) ko design nahi mila: {L.report.missed.slice(0, 6).join(' · ')}{L.report.missed.length > 6 ? '…' : ''}
           </p>
         )}
+        {L.seoErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ SEO: {L.seoErr}</p>}
       </div>
 
+      {/* Etsy SEO fields — filled automatically by Create listing; copy into Etsy */}
+      {L.seo && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>✨ Etsy SEO <span className="chip ok">ready</span></h3>
+          <SeoField label="Title" value={L.seo.title} />
+          <SeoField label="Tags" value={(L.seo.tags || []).join(', ')} />
+          <SeoField label="Description" value={L.seo.description} multi />
+          <SeoField label="ALT text" value={L.seo.alt} multi />
+        </div>
+      )}
+
+      {/* eslint-disable-next-line */}
       {/* results of this listing (Results screen shows all listings together) */}
       {L.outputs?.length > 0 && (
         <div className="card">
@@ -172,5 +209,23 @@ function ListingWizard({ L, onBack }) {
         </div>
       )}
     </>
+  )
+}
+
+/** One labeled read-only SEO field with a Copy button (input or textarea). */
+function SeoField({ label, value, multi }) {
+  const copy = () => navigator.clipboard.writeText(value || '')
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div className="topbar" style={{ margin: '0 0 4px' }}>
+        <span className="muted" style={{ fontWeight: 600 }}>{label}</span>
+        <button className="btn sm ghost" onClick={copy}>📋 Copy</button>
+      </div>
+      {multi ? (
+        <textarea readOnly value={value || ''} rows={3} style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 8, fontSize: 13 }} />
+      ) : (
+        <input readOnly value={value || ''} style={{ width: '100%' }} />
+      )}
+    </div>
   )
 }

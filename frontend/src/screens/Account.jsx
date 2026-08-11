@@ -1,11 +1,16 @@
 /**
- * Account.jsx — Logged-in user's page (opens from the user chip at the
- * bottom of the sidebar): email, cloud-sync status, manual "Sync now",
- * Logout, CHANGE PASSWORD, and the backend URL setting.
+ * Account.jsx — the SETTINGS page (opens from the user chip at the
+ * bottom of the sidebar). Everything "behind the scenes" lives here:
+ *   - user info, cloud-sync status, Sync now, Logout
+ *   - STORES: create / rename / delete (switching is the sidebar dropdown)
+ *   - Change password
+ *   - API key (Gemini, for the SEO part of Create listing)
+ *   - Backend URL (hidden developer setting)
  * (Login/signup itself happens on the Login screen — the app gate.)
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
+import Stores from './Stores.jsx'
 import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health, getGeminiKey, setGeminiKey } from '../api.js'
 
 export default function Account() {
@@ -64,6 +69,10 @@ export default function Account() {
         </div>
       )}
       {msg && <div className="card"><p className="muted" style={{ margin: 0 }}>{msg}</p></div>}
+
+      {/* ---- STORES management (create / rename / delete) lives in Settings.
+           Day-to-day store SWITCHING is the dropdown at the top of the sidebar. ---- */}
+      {app.authed && <Stores />}
 
       {/* ---- security: change password (only when logged in) ---- */}
       {app.authed && <ChangePassword />}
