@@ -2,8 +2,12 @@
  * routes/seo.js — AI SEO generation (Google Gemini, SERVER-SIDE).
  * The frontend sends design images + product info; Gemini looks at the
  * artwork and writes an Etsy title, tags, description and ALT text.
- * The API key stays on the server. Retries handle rate limits (429)
- * and temporary server errors, and we fall back between model names.
+ *
+ * API key: EACH USER brings their own Gemini key (entered on the app's
+ * Account screen; sent along with the request). If a request has no key,
+ * we fall back to the server's own GEMINI_API_KEY env var (if set).
+ * Retries handle rate limits (429) and temporary server errors,
+ * and we fall back between model names.
  */
 import { Router } from 'express'
 
@@ -11,9 +15,10 @@ const router = Router()
 const MODELS = ['gemini-2.5-flash', 'gemini-flash-latest']  // try in order
 
 // Low-level Gemini call with retry + model fallback.
-async function gemCall(body) {
-  const key = process.env.GEMINI_API_KEY
-  if (!key) throw Object.assign(new Error('GEMINI_API_KEY not configured on server'), { status: 503 })
+// userKey = the key the user saved in the app (preferred).
+async function gemCall(body, userKey) {
+  const key = userKey || process.env.GEMINI_API_KEY
+  if (!key) throw Object.assign(new Error('Gemini API key nahi mili — app ke Account screen par apni key dalein'), { status: 400 })
   let last
   for (const model of MODELS) {
     for (let att = 0; att < 3; att++) {
@@ -34,10 +39,10 @@ async function gemCall(body) {
   throw last
 }
 
-// POST /api/seo/generate { images: [base64...], category, keywords }
+// POST /api/seo/generate { images: [base64...], category, keywords, apiKey }
 router.post('/generate', async (req, res) => {
   try {
-    const { images = [], category = 'Canvas', keywords = '' } = req.body
+    const { images = [], category = 'Canvas', keywords = '', apiKey = '' } = req.body
 
     // The "system" prompt defines the exact JSON we want back and the
     // Etsy rules (length limits, no brand names, etc.).
@@ -56,7 +61,7 @@ router.post('/generate', async (req, res) => {
       system_instruction: { parts: [{ text: sys }] },
       contents: [{ parts }],
       generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
-    })
+    }, apiKey)
 
     // Pull the JSON out of the model's text response.
     const txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')

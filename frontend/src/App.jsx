@@ -52,11 +52,18 @@ function Shell() {
   const [screen, setScreen] = useState('dash')          // current nav selection
   const [api, setApi] = useState({ state: 'checking' }) // backend health for the sidebar chip
 
-  // Ping the backend once on load (shows ● backend / ○ backend offline).
+  // Ping the backend on load. The free server sleeps when idle and takes
+  // ~30-50s to wake, so if it's down we keep re-checking every 15s and the
+  // warning disappears by itself once the server is up.
   useEffect(() => {
-    health()
-      .then((r) => setApi({ state: 'ok', info: r }))
-      .catch(() => setApi({ state: 'down' }))
+    let timer
+    const check = () => {
+      health()
+        .then((r) => setApi({ state: 'ok', info: r }))
+        .catch(() => { setApi({ state: 'down' }); timer = setTimeout(check, 15000) })
+    }
+    check()
+    return () => clearTimeout(timer)
   }, [])
 
   // GATE 1: must be logged in.
@@ -114,9 +121,11 @@ function Shell() {
         )}
         {/* ---- pinned to the BOTTOM of the sidebar (margin-top: auto) ---- */}
         <div className="side-bottom">
-          <span className={'chip ' + (api.state === 'ok' ? 'ok' : 'err')}>
-            {api.state === 'ok' ? '● backend' : '○ backend offline'}
-          </span>
+          {/* Server status is internal — users only see a warning when
+              something is actually wrong (e.g. free server waking up). */}
+          {api.state === 'down' && (
+            <span className="chip err">⚠ server jag raha hai… thori dair me refresh karein</span>
+          )}
           {/* User chip — like Gemini/Vela: avatar + name at bottom-left.
               Click -> Account screen (details, password, sync, logout). */}
           {app.authed && (

@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
-import { genSeo } from '../api.js'
+import { genSeo, getGeminiKey } from '../api.js'
 import { Empty } from '../components/ui.jsx'
 
 export default function Seo() {
@@ -38,8 +38,14 @@ export default function Seo() {
   return (
     <>
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>✨ Etsy SEO (Gemini — server-side)</h3>
+        <h3 style={{ marginTop: 0 }}>✨ Etsy SEO (AI)</h3>
         <p className="muted">Har listing ke designs dekh kar AI title, tags, description aur ALT banata hai.</p>
+        {/* SEO runs on the USER'S OWN Gemini key — remind them if it's missing */}
+        {!getGeminiKey() && (
+          <p className="muted" style={{ color: 'var(--err)' }}>
+            🔑 Pehle apni (free) Gemini API key dalein — sidebar ke neeche apne naam par click karein → Account → "API key" section.
+          </p>
+        )}
         {err && <p className="muted" style={{ color: 'var(--err)' }}>⚠ {err}</p>}
       </div>
 
@@ -48,7 +54,7 @@ export default function Seo() {
         <div key={L.id} className="card">
           <div className="topbar" style={{ margin: 0 }}>
             <b>{L.name} <span className="chip">{L.designIds.length} designs</span></b>
-            <button className="btn sm" disabled={busyId === L.id} onClick={() => run(L)}>
+            <button className="btn sm" disabled={busyId === L.id || !getGeminiKey()} onClick={() => run(L)}>
               {busyId === L.id ? '⏳ Generating…' : L.seo ? '↻ Regenerate' : '✨ Generate SEO'}
             </button>
           </div>

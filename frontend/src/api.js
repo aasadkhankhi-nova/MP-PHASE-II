@@ -50,9 +50,20 @@ export async function api(path, options = {}) {
   return res.json()
 }
 
+// ---- user's own Gemini API key (for the SEO feature) ----
+// Saved ONLY in this browser (localStorage) — never stored on our server
+// or in the database. It is sent along with each SEO request so the
+// backend can call Gemini using the USER'S OWN key.
+export const getGeminiKey = () => localStorage.getItem('mp_gemini_key') || ''
+export const setGeminiKey = (k) => {
+  if (k) localStorage.setItem('mp_gemini_key', k.trim())
+  else localStorage.removeItem('mp_gemini_key')
+}
+
 // ---- simple endpoints ----
 export const health = () => api('/api/health')                                        // is the backend alive?
-export const genSeo = (payload) => api('/api/seo/generate', { method: 'POST', body: JSON.stringify(payload) })  // AI SEO
+export const genSeo = (payload) =>
+  api('/api/seo/generate', { method: 'POST', body: JSON.stringify({ ...payload, apiKey: getGeminiKey() }) })  // AI SEO (user's own key attached)
 
 // ---- Google sign-in (Supabase OAuth) ----
 // Supabase project URL is PUBLIC info (safe to keep in frontend code).

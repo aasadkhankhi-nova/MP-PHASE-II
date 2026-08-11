@@ -6,7 +6,7 @@
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
-import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health } from '../api.js'
+import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health, getGeminiKey, setGeminiKey } from '../api.js'
 
 export default function Account() {
   const app = useApp()
@@ -68,14 +68,55 @@ export default function Account() {
       {/* ---- security: change password (only when logged in) ---- */}
       {app.authed && <ChangePassword />}
 
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>⚙ Backend</h3>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ flex: 1, minWidth: 240 }} />
-          <button className="btn ghost" onClick={saveUrl}>Save & test</button>
+      {/* ---- user's own AI key for the SEO feature ---- */}
+      {app.authed && <ApiKeys />}
+
+      {/* ---- Backend URL: DEVELOPER-ONLY setting, hidden from normal users.
+           The correct address is built into the app, so nobody needs this.
+           To reveal it (e.g. if the backend ever moves), open the browser
+           console and run:  localStorage.setItem('mp_dev','1')  then refresh. ---- */}
+      {localStorage.getItem('mp_dev') === '1' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>⚙ Backend (developer)</h3>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ flex: 1, minWidth: 240 }} />
+            <button className="btn ghost" onClick={saveUrl}>Save & test</button>
+          </div>
         </div>
-      </div>
+      )}
     </>
+  )
+}
+
+/**
+ * API-keys card. Each user pastes their OWN Google Gemini key here
+ * (free from https://aistudio.google.com/apikey). The key is saved only
+ * in this browser's localStorage — our server and database never store it;
+ * it just travels along with each SEO request.
+ */
+function ApiKeys() {
+  const [key, setKey] = useState(getGeminiKey())
+  const [kMsg, setKMsg] = useState(null)
+
+  const save = () => {
+    setGeminiKey(key)
+    setKMsg(key.trim() ? '✅ Key save ho gayi (sirf is browser me)' : '🗑 Key hata di gayi')
+  }
+
+  return (
+    <div className="card" style={{ maxWidth: 560 }}>
+      <h3 style={{ marginTop: 0 }}>🔑 API key (SEO ke liye)</h3>
+      <p className="muted">
+        SEO feature aap ki apni (free) Google Gemini key se chalta hai.
+        Key yahan se banayein: <a className="lnk" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>
+        {' '}— phir neeche paste karein. Ye key sirf aap ke browser me save hoti hai, hamare server par store nahi hoti.
+      </p>
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        <input placeholder="Gemini API key (AIza…)" type="password" value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
+        <button className="btn" onClick={save}>Save</button>
+      </div>
+      {kMsg && <p className="muted" style={{ marginTop: 8 }}>{kMsg}</p>}
+    </div>
   )
 }
 
