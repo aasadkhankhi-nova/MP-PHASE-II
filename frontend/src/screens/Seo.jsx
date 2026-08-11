@@ -6,27 +6,15 @@
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
-import { getApiBase, setApiBase, health, genSeo } from '../api.js'
+import { genSeo } from '../api.js'
 import { Empty } from '../components/ui.jsx'
 
 export default function Seo() {
   const app = useApp()
-  const [apiUrl, setApiUrl] = useState(getApiBase())  // backend URL (rarely changed)
-  const [test, setTest] = useState(null)
   const [busyId, setBusyId] = useState(null)          // which listing is generating
   const [err, setErr] = useState(null)
 
-  // Save + ping the backend so the user can verify the connection.
-  const saveUrl = async () => {
-    setApiBase(apiUrl)
-    setTest('⏳')
-    try {
-      const h = await health()
-      setTest(`✅ Connected — db: ${h.db}`)
-    } catch (e) {
-      setTest('❌ ' + (e.message || e))
-    }
-  }
+  // (Backend URL setting lives on the Account screen — settings belong there.)
 
   // Send up to 3 design images (base64) + category/keywords to the backend.
   const run = async (L) => {
@@ -49,16 +37,6 @@ export default function Seo() {
 
   return (
     <>
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>⚙ Backend connection</h3>
-        <p className="muted">Default set hai; sirf tab badlein jab backend ka address badle.</p>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input value={apiUrl} onChange={(e) => setApiUrl(e.target.value)} style={{ flex: 1, minWidth: 260 }} placeholder="https://mp-backend.onrender.com" />
-          <button className="btn" onClick={saveUrl}>Save & test</button>
-        </div>
-        {test && <p className="muted" style={{ marginTop: 8 }}>{test}</p>}
-      </div>
-
       <div className="card">
         <h3 style={{ marginTop: 0 }}>✨ Etsy SEO (Gemini — server-side)</h3>
         <p className="muted">Har listing ke designs dekh kar AI title, tags, description aur ALT banata hai.</p>

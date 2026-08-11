@@ -24,7 +24,6 @@ import Login from './screens/Login.jsx'
 // Sidebar structure: {sec} rows are section headings, others are nav items.
 const NAV = [
   { sec: 'Workspace' },
-  { id: 'account', icon: '👤', label: 'Account' },
   { id: 'stores', icon: '🏬', label: 'Stores' },
   { id: 'dash', icon: '🏠', label: 'Dashboard' },
   { id: 'listings', icon: '🧾', label: 'Listings' },
@@ -66,7 +65,9 @@ function Shell() {
   // GATE 2: must have a store open — otherwise force the Stores screen.
   const needStore = app.ready && !app.curStore
   const eff = needStore ? 'stores' : screen
-  const current = NAV.find((n) => n.id === eff)
+  // Account is not in the NAV list any more (it opens from the user chip
+  // at the bottom of the sidebar), so give it its own title here.
+  const current = NAV.find((n) => n.id === eff) || (eff === 'account' ? { icon: '👤', label: 'Account' } : null)
 
   // Simple router: screen id -> component.
   const body =
@@ -111,11 +112,24 @@ function Shell() {
             </button>
           )
         )}
-        <div className="nav-sec">Status</div>
-        <div style={{ padding: '4px 10px' }}>
+        {/* ---- pinned to the BOTTOM of the sidebar (margin-top: auto) ---- */}
+        <div className="side-bottom">
           <span className={'chip ' + (api.state === 'ok' ? 'ok' : 'err')}>
             {api.state === 'ok' ? '● backend' : '○ backend offline'}
           </span>
+          {/* User chip — like Gemini/Vela: avatar + name at bottom-left.
+              Click -> Account screen (details, password, sync, logout). */}
+          {app.authed && (
+            <button
+              className={'side-user' + (eff === 'account' ? ' active' : '')}
+              onClick={() => setScreen('account')}
+              title="Account settings"
+            >
+              <span className="avatar">{(app.session.user.email || '?').slice(0, 2).toUpperCase()}</span>
+              <span className="side-user-name">{(app.session.user.email || '').split('@')[0]}</span>
+              <span className="side-user-gear">⚙</span>
+            </button>
+          )}
         </div>
       </aside>
       <main className="main">

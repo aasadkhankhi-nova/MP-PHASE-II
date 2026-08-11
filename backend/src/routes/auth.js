@@ -60,4 +60,24 @@ router.post('/resend', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// PUT /api/auth/password { password }
+// Changes the LOGGED-IN user's password. We forward the user's own
+// Bearer token to Supabase, so each user can only change their own password.
+router.put('/password', async (req, res) => {
+  try {
+    const { password } = req.body
+    if (!password || password.length < 6) return res.status(400).json({ ok: false, error: 'password kam az kam 6 harf ka ho' })
+    const authz = req.headers.authorization || ''
+    if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
+    const r = await fetch(gotrue('/user'), {
+      method: 'PUT',
+      headers: { ...headers(), authorization: authz },
+      body: JSON.stringify({ password }),
+    })
+    const j = await r.json()
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.error_description || j.message || 'password change failed' })
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
 export default router

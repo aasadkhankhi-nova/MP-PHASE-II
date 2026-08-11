@@ -133,6 +133,10 @@ export async function authVerify(email, code) {
 // Ask Supabase to send the verification email again.
 export const authResend = (email) => api('/api/auth/resend', { method: 'POST', body: JSON.stringify({ email }) })
 
+// Change the logged-in user's password (Account screen).
+// The auth token identifies the user, so only the new password is needed.
+export const authChangePassword = (password) => api('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password }) })
+
 // ---- cloud data (all scoped to the logged-in user on the server) ----
 export const cloudStores = {
   list: () => api('/api/stores'),
