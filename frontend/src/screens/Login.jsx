@@ -15,14 +15,13 @@
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
-import { authLogin, authSignup, authVerify, authResend, googleSignInUrl, takeOAuthError } from '../api.js'
+import { authLogin, authSignup, authResend, googleSignInUrl, takeOAuthError } from '../api.js'
 
 export default function Login() {
   const app = useApp()
   const [mode, setMode] = useState('in')   // 'in' = sign in, 'up' = create account, 'verify' = enter email code
   const [email, setEmail] = useState('')
   const [pass, setPass] = useState('')
-  const [code, setCode] = useState('')     // the 6-digit code from the email
   // If a Google login attempt just failed, show that error once.
   const [msg, setMsg] = useState(() => { const e = takeOAuthError(); return e ? '⚠ ' + e : null })
   const [busy, setBusy] = useState(false)  // disables buttons while a request runs
@@ -36,9 +35,9 @@ export default function Login() {
       if (mode === 'up') {
         const sess = await authSignup(email.trim(), pass)
         if (!sess) {
-          // Supabase wants the email confirmed first -> show the code step
+          // Supabase wants the email confirmed first -> show the "check email" step
           setMode('verify')
-          setMsg('✉️ 6-digit code aap ki email par bheja gaya hai (spam folder bhi check karein).')
+          setMsg(null)
           return
         }
         await app.loginDone(sess)
@@ -46,18 +45,6 @@ export default function Login() {
         const sess = await authLogin(email.trim(), pass)
         await app.loginDone(sess)
       }
-    } catch (e) {
-      setMsg('⚠ ' + (e.message || e))
-    } finally { setBusy(false) }
-  }
-
-  // "verify" step: check the typed code with the backend.
-  const doVerify = async () => {
-    setMsg(null); setBusy(true)
-    try {
-      if (code.trim().length < 6) throw new Error('Email wala 6-digit code likhein')
-      const sess = await authVerify(email.trim(), code.trim())
-      await app.loginDone(sess)   // correct code -> logged in straight away
     } catch (e) {
       setMsg('⚠ ' + (e.message || e))
     } finally { setBusy(false) }
@@ -85,17 +72,22 @@ export default function Login() {
 
         {mode === 'verify' ? (
           <>
-            {/* ---- step 2 of signup: enter the code from the email ---- */}
-            <p className="muted" style={{ marginTop: 4 }}>Email verify karein</p>
-            <p className="muted" style={{ fontSize: 12.5 }}>{email} par code bheja gaya hai</p>
-            <input placeholder="6-digit code" value={code} inputMode="numeric" maxLength={8}
-              onChange={(e) => setCode(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && doVerify()} />
-            <button className="btn" disabled={busy} onClick={doVerify} style={{ width: '100%', padding: '11px' }}>
-              {busy ? '⏳ …' : 'Verify & Login'}
-            </button>
+            {/* ---- step 2 of signup: confirm via the link in the email ----
+                 The email contains a "Confirm email address" link. Clicking it
+                 brings the user back to this app WITH a login token in the URL,
+                 and main.jsx logs them in automatically. So this screen only
+                 needs to tell the user to go check their inbox.
+                 (If a 6-digit code is ever enabled via custom SMTP, the
+                 authVerify() flow in api.js is ready to be used here.) ---- */}
+            <p className="muted" style={{ marginTop: 4 }}>Email check karein 📬</p>
+            <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
+              <b>{email}</b> par confirmation email bheji gayi hai.
+              Us me <b>"Confirm email address"</b> link par click karein —
+              aap khud-ba-khud login ho jayenge. (Spam folder bhi check karein.)
+            </p>
             {msg && <p className="muted" style={{ marginTop: 10 }}>{msg}</p>}
             <p className="muted" style={{ marginTop: 12, textAlign: 'center' }}>
-              Code nahi mila? <a className="lnk" onClick={doResend}>Resend code</a>
+              Email nahi mili? <a className="lnk" onClick={doResend}>Resend email</a>
               {' · '}<a className="lnk" onClick={() => { setMode('in'); setMsg(null) }}>Back</a>
             </p>
           </>
