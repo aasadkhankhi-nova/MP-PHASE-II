@@ -9,6 +9,7 @@
  *   SUPABASE_ANON_KEY    public (publishable) key — used to verify logins
  *   SUPABASE_SERVICE_KEY secret key — used for file Storage uploads
  *   CORS_ORIGINS         comma-separated list of allowed website origins
+ *   ETSY_API_KEY         Etsy app keystring (for the Etsy integration)
  */
 import express from 'express'
 import cors from 'cors'
@@ -18,6 +19,7 @@ import storeRoutes from './routes/stores.js'
 import authRoutes from './routes/auth.js'
 import workspaceRoutes from './routes/workspace.js'
 import uploadRoutes from './routes/upload.js'
+import etsyRoutes from './routes/etsy.js'
 import { pool } from './db.js'
 
 const app = express()
@@ -39,7 +41,8 @@ app.get('/api/health', async (_req, res) => {
   }
   const auth = process.env.SUPABASE_URL && process.env.SUPABASE_ANON_KEY ? 'ok' : 'not configured'
   const storage = process.env.SUPABASE_SERVICE_KEY ? 'ok' : 'not configured'
-  res.json({ ok: true, service: 'mp-backend', version: '2.1.0', db, auth, storage, time: new Date().toISOString() })
+  const etsy = process.env.ETSY_API_KEY ? 'ok' : 'not configured'
+  res.json({ ok: true, service: 'mp-backend', version: '2.2.0', db, auth, storage, etsy, time: new Date().toISOString() })
 })
 
 // Mount all route groups under /api/...
@@ -48,6 +51,7 @@ app.use('/api/seo', seoRoutes)             // AI SEO (Gemini)
 app.use('/api/stores', storeRoutes)        // stores CRUD (per user)
 app.use('/api/workspace', workspaceRoutes) // full workspace pull/push (per store)
 app.use('/api/upload', uploadRoutes)       // image upload -> Supabase Storage
+app.use('/api/etsy', etsyRoutes)           // Etsy shop connect + publish drafts
 
 const port = process.env.PORT || 4000
 app.listen(port, () => console.log(`mp-backend listening on :${port}`))

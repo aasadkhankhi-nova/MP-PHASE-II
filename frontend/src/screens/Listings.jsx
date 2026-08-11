@@ -10,13 +10,13 @@
  *   ListingWizard — one listing opened: pick designs, pick mockups
  *                   (whole sets or singles), press Create listing.
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Empty, confirmDel } from '../components/ui.jsx'
 import { dnumLabel } from '../store/helpers.js'
 import { desDnum, runGeneration } from '../store/compose.js'
 import { uid } from '../store/helpers.js'
-import { genSeo, getGeminiKey } from '../api.js'
+import { genSeo, getGeminiKey, etsy } from '../api.js'
 
 export default function Listings() {
   const app = useApp()
@@ -192,6 +192,10 @@ function ListingWizard({ L, onBack }) {
         </div>
       )}
 
+      {/* Send to Etsy — appears once photos are generated. Creates a DRAFT
+          on the connected Etsy shop; the seller publishes it on Etsy. */}
+      {L.outputs?.length > 0 && <EtsyPublish L={L} onSaved={(patch) => set(patch)} />}
+
       {/* eslint-disable-next-line */}
       {/* results of this listing (Results screen shows all listings together) */}
       {L.outputs?.length > 0 && (
@@ -226,6 +230,124 @@ function SeoField({ label, value, multi }) {
       ) : (
         <input readOnly value={value || ''} style={{ width: '100%' }} />
       )}
+    </div>
+  )
+}
+
+/**
+ * EtsyPublish — the "📤 Send to Etsy" card inside an opened listing.
+ * Shows only after photos exist. Flow:
+ *   - if the current store has no Etsy connection -> point to Settings
+ *   - else: small form (price, quantity, shipping profile, category search)
+ *     -> Send -> backend creates a DRAFT listing + uploads the photos
+ *   - the returned link opens the draft in Etsy's own listing editor
+ * Title/tags/description come from the listing's SEO (or the name as fallback).
+ */
+function EtsyPublish({ L, onSaved }) {
+  const app = useApp()
+  const [st, setSt] = useState(null)          // Etsy connection status
+  const [profiles, setProfiles] = useState([])
+  const [profileId, setProfileId] = useState('')
+  const [taxoQ, setTaxoQ] = useState('')      // category search text
+  const [taxoHits, setTaxoHits] = useState([])
+  const [taxoId, setTaxoId] = useState(null)
+  const [taxoLabel, setTaxoLabel] = useState('')
+  const [price, setPrice] = useState(L.price || '')
+  const [qty, setQty] = useState(L.qty || 999)
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  // check the connection once (per store)
+  useEffect(() => {
+    etsy.status(app.curStoreId).then(setSt).catch(() => setSt({ connected: false, keyReady: false }))
+  }, [app.curStoreId])
+
+  // load shipping profiles as soon as we know Etsy is connected
+  useEffect(() => {
+    if (st?.connected) {
+      etsy.shippingProfiles(app.curStoreId)
+        .then((r) => { setProfiles(r.profiles); if (r.profiles[0]) setProfileId(String(r.profiles[0].id)) })
+        .catch((e) => setMsg('⚠ ' + e.message))
+    }
+  }, [st?.connected, app.curStoreId])
+
+  // category search (small delay so we don't call on every keystroke)
+  useEffect(() => {
+    if (!taxoQ.trim() || taxoId) { setTaxoHits([]); return }
+    const t = setTimeout(() => {
+      etsy.taxonomy(taxoQ).then((r) => setTaxoHits(r.nodes)).catch(() => {})
+    }, 350)
+    return () => clearTimeout(t)
+  }, [taxoQ, taxoId])
+
+  const send = async () => {
+    setMsg(null); setBusy(true)
+    try {
+      if (!price) throw new Error('Price likhein')
+      if (!taxoId) throw new Error('Category chunein (search kar ke list me se click karein)')
+      if (!profileId) throw new Error('Shipping profile chunein')
+      const r = await etsy.publish({
+        storeId: app.curStoreId,
+        title: L.seo?.title || L.name,
+        description: L.seo?.description || L.name,
+        tags: L.seo?.tags || [],
+        price: Number(price),
+        quantity: Number(qty) || 1,
+        taxonomyId: taxoId,
+        shippingProfileId: Number(profileId),
+        images: (L.outputs || []).slice(0, 10).map((o) => o.dataUrl),
+      })
+      await onSaved({ etsy: { listingId: r.listingId, url: r.url, at: Date.now() }, price, qty })
+      setMsg(`✅ Draft ban gaya! ${r.uploaded} photos upload huin.` + (r.imgErrors?.length ? ` (⚠ ${r.imgErrors.length} photo fail)` : ''))
+    } catch (e) {
+      setMsg('⚠ ' + (e.message || e))
+    } finally { setBusy(false) }
+  }
+
+  if (!st) return null
+  if (!st.keyReady) return null   // integration not switched on yet — hide quietly
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>📤 Send to Etsy</h3>
+      {!st.connected ? (
+        <p className="muted">Is store ki Etsy shop connect nahi hai — Settings (apne naam par click) me 🛍️ Etsy section se connect karein.</p>
+      ) : (
+        <>
+          <p className="muted">Draft listing banegi <b>{st.shop?.shop_name}</b> par — publish aap Etsy par khud karenge (Etsy ki $0.20 listing fee publish par lagti hai).</p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <input placeholder="Price (USD)" type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: 130 }} />
+            <input placeholder="Quantity" type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 110 }} />
+            <select value={profileId} onChange={(e) => setProfileId(e.target.value)} style={{ minWidth: 200 }}>
+              {!profiles.length && <option value="">— shipping profile —</option>}
+              {profiles.map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+            </select>
+          </div>
+          {/* category: type to search Etsy's tree, click a result to lock it */}
+          <input
+            placeholder="Category search (e.g. wall decor)"
+            value={taxoId ? taxoLabel : taxoQ}
+            onChange={(e) => { setTaxoId(null); setTaxoQ(e.target.value) }}
+            style={{ width: '100%', marginBottom: 6 }}
+          />
+          {taxoHits.length > 0 && !taxoId && (
+            <div style={{ marginBottom: 8 }}>
+              {taxoHits.map((n) => (
+                <p key={n.id} className="muted clickable" style={{ margin: '3px 0', cursor: 'pointer' }}
+                  onClick={() => { setTaxoId(n.id); setTaxoLabel(n.label); setTaxoHits([]) }}>
+                  📁 {n.label}
+                </p>
+              ))}
+            </div>
+          )}
+          <button className="btn" disabled={busy} onClick={send}>{busy ? '⏳ Bhej raha hai…' : '📤 Send to Etsy (draft)'}</button>
+          {L.etsy?.url && (
+            <p className="muted" style={{ marginTop: 8 }}>
+              🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par draft kholein</a>
+            </p>
+          )}
+        </>
+      )}
+      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
 }

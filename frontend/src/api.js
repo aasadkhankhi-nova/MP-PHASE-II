@@ -148,6 +148,18 @@ export const authResend = (email) => api('/api/auth/resend', { method: 'POST', b
 // The auth token identifies the user, so only the new password is needed.
 export const authChangePassword = (password) => api('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password }) })
 
+// ---- Etsy integration (everything runs through OUR backend; Etsy tokens
+//      never touch the browser). One MP store = one Etsy shop. ----
+export const etsy = {
+  status: (storeId) => api(`/api/etsy/status?storeId=${storeId}`),                       // connected? which shop?
+  connectUrl: (storeId) => api(`/api/etsy/connect?storeId=${storeId}`),                  // returns Etsy permission-page URL
+  disconnect: (storeId) => api('/api/etsy/disconnect', { method: 'POST', body: JSON.stringify({ storeId }) }),
+  shippingProfiles: (storeId) => api(`/api/etsy/shipping-profiles?storeId=${storeId}`),  // for the publish form
+  taxonomy: (query) => api(`/api/etsy/taxonomy?q=${encodeURIComponent(query)}`),         // category search
+  listings: (storeId, state = 'active') => api(`/api/etsy/listings?storeId=${storeId}&state=${state}`),
+  publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
+}
+
 // ---- cloud data (all scoped to the logged-in user on the server) ----
 export const cloudStores = {
   list: () => api('/api/stores'),

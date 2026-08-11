@@ -8,10 +8,10 @@
  *   - Backend URL (hidden developer setting)
  * (Login/signup itself happens on the Login screen — the app gate.)
  */
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import Stores from './Stores.jsx'
-import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health, getGeminiKey, setGeminiKey } from '../api.js'
+import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health, getGeminiKey, setGeminiKey, etsy } from '../api.js'
 
 export default function Account() {
   const app = useApp()
@@ -73,6 +73,9 @@ export default function Account() {
       {/* ---- STORES management (create / rename / delete) lives in Settings.
            Day-to-day store SWITCHING is the dropdown at the top of the sidebar. ---- */}
       {app.authed && <Stores />}
+
+      {/* ---- Etsy connection for the CURRENT store ---- */}
+      {app.authed && app.curStoreId && <EtsyConnect storeId={app.curStoreId} storeName={app.curStore?.name} />}
 
       {/* ---- security: change password (only when logged in) ---- */}
       {app.authed && <ChangePassword />}
@@ -161,6 +164,87 @@ function ChangePassword() {
       <input placeholder="Naya password dobara" type="password" value={p2} onChange={(e) => setP2(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && change()} style={{ width: '100%', marginBottom: 10 }} />
       <button className="btn" disabled={pBusy} onClick={change}>{pBusy ? '⏳ …' : 'Change password'}</button>
       {pMsg && <p className="muted" style={{ marginTop: 10 }}>{pMsg}</p>}
+    </div>
+  )
+}
+
+/**
+ * Etsy-connection card for the currently selected store.
+ * "Connect Etsy" sends the browser to Etsy's own permission page;
+ * after Allow, the backend saves the tokens and brings the user back.
+ * Once connected we show the shop name + a peek at its listings.
+ */
+function EtsyConnect({ storeId, storeName }) {
+  const [st, setSt] = useState(null)        // {connected, shop, keyReady}
+  const [lst, setLst] = useState(null)      // peek at shop listings
+  const [eMsg, setEMsg] = useState(null)
+  const [eBusy, setEBusy] = useState(false)
+
+  // load connection status whenever the selected store changes
+  useEffect(() => {
+    setSt(null); setLst(null); setEMsg(null)
+    etsy.status(storeId).then(setSt).catch((e) => setEMsg('⚠ ' + e.message))
+    // show the "connected!" note if we just came back from Etsy
+    const h = window.location.hash || ''
+    if (h.startsWith('#etsy=')) {
+      const v = decodeURIComponent(h.slice(6))
+      setEMsg(v.startsWith('connected:') ? '✅ Etsy connect ho gaya: ' + v.slice(10) : '⚠ ' + v.replace(/^error:/, ''))
+      history.replaceState(null, '', window.location.pathname + window.location.search)
+    }
+  }, [storeId])
+
+  const connect = async () => {
+    setEBusy(true); setEMsg(null)
+    try {
+      const r = await etsy.connectUrl(storeId)
+      window.location.href = r.url          // -> Etsy permission page
+    } catch (e) { setEMsg('⚠ ' + e.message); setEBusy(false) }
+  }
+
+  const disconnect = async () => {
+    if (!confirm('Etsy connection hatana hai? (Data delete nahi hota, sirf link tootta hai)')) return
+    await etsy.disconnect(storeId)
+    setSt({ ...st, connected: false, shop: null }); setLst(null)
+  }
+
+  const peek = async () => {
+    setEBusy(true); setEMsg(null)
+    try { setLst(await etsy.listings(storeId, 'active')) }
+    catch (e) { setEMsg('⚠ ' + e.message) }
+    finally { setEBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🛍️ Etsy — {storeName || 'store'}</h3>
+      {!st && !eMsg && <p className="muted">⏳ checking…</p>}
+      {st && !st.keyReady && (
+        <p className="muted">Etsy integration abhi taiyar ho rahi hai (server par Etsy API key set hone ka intezar).</p>
+      )}
+      {st && st.keyReady && !st.connected && (
+        <>
+          <p className="muted">Is store ko apni Etsy shop se jorein — phir listings seedha Etsy par draft ban kar jayengi.</p>
+          <button className="btn" disabled={eBusy} onClick={connect}>🔗 Connect Etsy</button>
+        </>
+      )}
+      {st && st.connected && (
+        <>
+          <p className="muted">✅ Connected: <b>{st.shop?.shop_name}</b> <span className="chip ok">shop #{st.shop?.shop_id}</span></p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn ghost" disabled={eBusy} onClick={peek}>👀 Shop listings dekhein</button>
+            <button className="btn danger" onClick={disconnect}>Disconnect</button>
+          </div>
+          {lst && (
+            <div style={{ marginTop: 10 }}>
+              <p className="muted"><b>{lst.count}</b> active listings{lst.listings.length ? ' — pehli ' + lst.listings.length + ':' : ''}</p>
+              {lst.listings.map((l) => (
+                <p key={l.id} className="muted" style={{ margin: '3px 0' }}>• {l.title} <span className="chip">{l.state}</span></p>
+              ))}
+            </div>
+          )}
+        </>
+      )}
+      {eMsg && <p className="muted" style={{ marginTop: 8 }}>{eMsg}</p>}
     </div>
   )
 }
