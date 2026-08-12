@@ -1,27 +1,17 @@
 /**
- * EtsyStore.jsx — the "Etsy Store" browser, now with the Vela-style
- * FILTER SIDEBAR. Everything works listing-wise:
- *   - Status:   Active / Draft / Expired / Inactive / Sold out (with counts)
- *   - ListPilot: Mockups / Sets / Designs (jump to those screens) and
- *     🚀 Launchpad — listings created BY ListPilot that are still drafts
- *     on Etsy (publish -> they move to Active; delete -> gone)
- *   - Sections / Shipping profiles / Return policies / 🎬 With video —
- *     click any value -> only the listings having that value are shown
- * Filters combine (section + shipping + video...). Sorting on top.
- * Data comes from ONE index call that scans the whole shop (cached 10 min).
+ * EtsyStore.jsx — the Etsy listings screen.
+ * The FILTER MENU (Status / Sections / Shipping / Returns / Media) now
+ * lives in the app's LEFT SIDEBAR (App.jsx) — this screen receives the
+ * already-loaded index + the chosen filters as props and just renders:
+ *   - the filtered, sorted, paginated listing rows (search + sort on top)
+ *   - the detail view (photos, tags, description) with Edit / Delete
+ * es = { checked, connected, idx, busy, err } — loaded once in App.jsx.
  */
 import React, { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
 import { Empty } from '../components/ui.jsx'
 
-const STATES = [
-  { id: 'active', label: 'Active' },
-  { id: 'draft', label: 'Draft' },
-  { id: 'expired', label: 'Expired' },
-  { id: 'inactive', label: 'Inactive' },
-  { id: 'sold_out', label: 'Sold out' },
-]
 const SORTS = [
   { id: 'title_az', label: 'Title: A to Z' },
   { id: 'title_za', label: 'Title: Z to A' },
@@ -34,70 +24,28 @@ const SORTS = [
 ]
 const PAGE = 25
 
-export default function EtsyStore({ go }) {
+export default function EtsyStore({ es, state, filt, onDeleted }) {
   const app = useApp()
   const storeId = app.curStoreId
-  const [st, setSt] = useState(null)            // Etsy connection status
-  const [counts, setCounts] = useState(null)    // per-state totals
-  const [state, setState] = useState('active')  // selected Status
-  const [idx, setIdx] = useState(null)          // ALL listings of this state (the index)
-  const [names, setNames] = useState({ sections: [], ship: [], ret: [] })  // id -> naam
-  const [filt, setFilt] = useState({})          // {sectionId, shipId, retId, video, lp}
   const [sort, setSort] = useState('exp_late')
   const [q, setQ] = useState('')
   const [page, setPage] = useState(0)
-  const [busy, setBusy] = useState(false)
   const [openId, setOpenId] = useState(null)
   const [detail, setDetail] = useState(null)
   const [edit, setEdit] = useState(false)
   const [err, setErr] = useState(null)
 
-  // 1) connection status
-  useEffect(() => {
-    setSt(null); setCounts(null); setIdx(null); setErr(null); setFilt({})
-    if (!storeId) return
-    etsy.status(storeId).then(setSt).catch((e) => setErr(e.message))
-  }, [storeId])
+  // jump back to page 1 whenever the filters/status change
+  useEffect(() => { setPage(0) }, [state, filt])
 
-  // 2) tab counts + the display NAMES for sections / profiles / policies
-  useEffect(() => {
-    if (!st?.connected) return
-    etsy.counts(storeId).then((r) => setCounts(r.counts)).catch(() => {})
-    etsy.sections(storeId).then((r) => setNames((n) => ({ ...n, sections: r.sections }))).catch(() => {})
-    etsy.shippingProfiles(storeId).then((r) => setNames((n) => ({ ...n, ship: r.profiles }))).catch(() => {})
-    etsy.returnPolicies(storeId).then((r) => setNames((n) => ({ ...n, ret: r.policies }))).catch(() => {})
-  }, [st?.connected, storeId])
-
-  // 3) the INDEX: every listing of the selected state, with filter facts
-  useEffect(() => {
-    if (!st?.connected) return
-    setBusy(true); setIdx(null); setErr(null); setPage(0)
-    etsy.index(storeId, state)
-      .then((r) => setIdx(r.listings))
-      .catch((e) => setErr(e.message))
-      .finally(() => setBusy(false))
-  }, [st?.connected, storeId, state])
-
-  // ListPilot-made listings (drafts sent to Etsy from this workspace)
+  // ListPilot-made listings (for the 🚀 Launchpad filter)
   const lpIds = useMemo(() => new Set(
     (app.ws.listings || []).map((L) => L.etsy?.listingId).filter(Boolean).map(String)
   ), [app.ws.listings])
 
-  // facet counts, computed from the index (how many listings per section etc.)
-  const facets = useMemo(() => {
-    const f = { section: {}, ship: {}, ret: {}, video: 0 }
-    for (const l of idx || []) {
-      if (l.sectionId) f.section[l.sectionId] = (f.section[l.sectionId] || 0) + 1
-      if (l.shipId) f.ship[l.shipId] = (f.ship[l.shipId] || 0) + 1
-      if (l.retId) f.ret[l.retId] = (f.ret[l.retId] || 0) + 1
-      if (l.video) f.video++
-    }
-    return f
-  }, [idx])
-
-  // apply filters + search + sort
+  // filters + search + sort applied to the index (loaded in App.jsx)
   const rows = useMemo(() => {
-    let r = idx || []
+    let r = es.idx || []
     if (filt.lp) r = r.filter((l) => lpIds.has(String(l.id)))
     if (filt.sectionId) r = r.filter((l) => String(l.sectionId) === String(filt.sectionId))
     if (filt.shipId) r = r.filter((l) => String(l.shipId) === String(filt.shipId))
@@ -115,7 +63,7 @@ export default function EtsyStore({ go }) {
       exp_late: (a, b) => String(b.ending || '').localeCompare(String(a.ending || '')),
     }[sort]
     return [...r].sort(by)
-  }, [idx, filt, q, sort, lpIds])
+  }, [es.idx, filt, q, sort, lpIds])
 
   const open = async (id) => {
     setOpenId(id); setDetail(null); setEdit(false)
@@ -130,16 +78,14 @@ export default function EtsyStore({ go }) {
     if (!confirm('Ye listing Etsy se HAMESHA ke liye delete ho jayegi. Pakka?')) return
     try {
       await etsy.deleteListing(storeId, openId)
+      onDeleted && onDeleted(openId)
       setOpenId(null); setDetail(null)
-      setIdx((x) => (x || []).filter((l) => String(l.id) !== String(openId)))
     } catch (e) { setErr(e.message) }
   }
-  // one filter chunein/hatayein (click again = clear)
-  const tog = (key, val) => { setPage(0); setFilt((f) => ({ ...f, [key]: String(f[key]) === String(val) ? null : val })) }
 
   if (!storeId) return <Empty>Pehle koi store select karein.</Empty>
-  if (!st && !err) return <div className="card"><p className="muted">⏳ checking Etsy connection…</p></div>
-  if (st && !st.connected) {
+  if (!es.checked) return <div className="card"><p className="muted">⏳ checking Etsy connection…</p></div>
+  if (!es.connected) {
     return (
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🛍️ Etsy Store</h3>
@@ -206,122 +152,49 @@ export default function EtsyStore({ go }) {
     )
   }
 
-  // ---------- list view: filter sidebar (left) + listings (right) ----------
+  // ---------- list view ----------
   const pages = Math.max(1, Math.ceil(rows.length / PAGE))
   const pageRows = rows.slice(page * PAGE, page * PAGE + PAGE)
 
   return (
-    <div className="etsy-layout">
-      {/* ==================== FILTER SIDEBAR ==================== */}
-      <aside className="etsy-filters">
-        <FGroup title="Status">
-          {STATES.map((s) => (
-            <FRow key={s.id} label={s.label} count={counts ? counts[s.id] : ''} active={state === s.id && !filt.lp}
-              onClick={() => { setState(s.id); setFilt({}); setPage(0) }} />
-          ))}
-        </FGroup>
+    <>
+      <div className="card">
+        <div className="topbar" style={{ margin: 0, gap: 8, flexWrap: 'wrap' }}>
+          <h3 style={{ margin: 0 }}>{rows.length} listings <span className="chip">{state}{filt.sectionId || filt.shipId || filt.retId || filt.video || filt.lp ? ' · filtered' : ''}</span></h3>
+          <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 170 }} />
+            <select value={sort} onChange={(e) => setSort(e.target.value)}>
+              {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
+            </select>
+          </span>
+        </div>
+      </div>
 
-        <FGroup title="ListPilot">
-          <FRow label="🖼 Mockups" count={app.ws.mockups.length} onClick={() => go && go('mockups')} />
-          <FRow label="🗂 Sets" count={app.ws.sets.length} onClick={() => go && go('sets')} />
-          <FRow label="🎨 Designs" count={app.ws.designs.length} onClick={() => go && go('designs')} />
-          {/* Launchpad: LP-made listings abhi draft me — publish par Active me chali jati hain */}
-          <FRow label="🚀 Launchpad" count={lpIds.size} active={!!filt.lp}
-            onClick={() => { setState('draft'); setFilt({ lp: filt.lp ? null : true }); setPage(0) }} />
-        </FGroup>
+      {(err || es.err) && <div className="card"><p className="muted">⚠ {err || es.err}</p></div>}
+      {es.busy && <div className="card"><p className="muted">⏳ Poori shop ka index ban raha hai (pehli bar 10–20 sec)…</p></div>}
 
-        {names.sections.length > 0 && (
-          <FGroup title="Sections">
-            {names.sections.map((sx) => (
-              <FRow key={sx.id} label={sx.title} count={facets.section[sx.id] || 0} active={String(filt.sectionId) === String(sx.id)}
-                onClick={() => tog('sectionId', sx.id)} />
-            ))}
-          </FGroup>
-        )}
-
-        {names.ship.length > 0 && (
-          <FGroup title="Shipping profiles">
-            {names.ship.map((p) => (
-              <FRow key={p.id} label={'🚚 ' + p.title} count={facets.ship[p.id] || 0} active={String(filt.shipId) === String(p.id)}
-                onClick={() => tog('shipId', p.id)} />
-            ))}
-          </FGroup>
-        )}
-
-        {names.ret.length > 0 && (
-          <FGroup title="Returns & exchanges">
-            {names.ret.map((p) => (
-              <FRow key={p.id} label={p.label} count={facets.ret[p.id] || 0} active={String(filt.retId) === String(p.id)}
-                onClick={() => tog('retId', p.id)} />
-            ))}
-          </FGroup>
-        )}
-
-        <FGroup title="Media">
-          <FRow label="🎬 With video" count={facets.video} active={!!filt.video} onClick={() => tog('video', true)} />
-        </FGroup>
-      </aside>
-
-      {/* ==================== LISTINGS ==================== */}
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="card">
-          <div className="topbar" style={{ margin: 0, gap: 8, flexWrap: 'wrap' }}>
-            <h3 style={{ margin: 0 }}>🛍️ {st.shop?.shop_name} <span className="chip ok">{rows.length}</span></h3>
-            <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 170 }} />
-              <select value={sort} onChange={(e) => setSort(e.target.value)}>
-                {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
-              </select>
+      {!es.busy && pageRows.map((l) => (
+        <div key={l.id} className="card etsy-row" onClick={() => open(l.id)}>
+          <div className="etsy-thumb">{l.img ? <img src={l.img} alt="" /> : <span>🖼</span>}</div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <b className="ellip" style={{ display: 'block' }}>{l.title}</b>
+            <span className="muted" style={{ fontSize: 12 }}>
+              📦 {l.quantity} · 💲{l.price} {l.currency} · 👁 {l.views ?? 0}{l.ending ? ` · ends ${l.ending}` : ''}{l.video ? ' · 🎬' : ''}
             </span>
           </div>
+          <span className={'chip ' + (l.state === 'active' ? 'ok' : '')}>{l.state}</span>
         </div>
+      ))}
+      {!es.busy && !pageRows.length && <Empty>Is filter me koi listing nahi.</Empty>}
 
-        {err && <div className="card"><p className="muted">⚠ {err}</p></div>}
-        {busy && <div className="card"><p className="muted">⏳ Poori shop ka index ban raha hai (pehli bar 10–20 sec)…</p></div>}
-
-        {!busy && pageRows.map((l) => (
-          <div key={l.id} className="card etsy-row" onClick={() => open(l.id)}>
-            <div className="etsy-thumb">{l.img ? <img src={l.img} alt="" /> : <span>🖼</span>}</div>
-            <div style={{ flex: 1, minWidth: 0 }}>
-              <b className="ellip" style={{ display: 'block' }}>{l.title}</b>
-              <span className="muted" style={{ fontSize: 12 }}>
-                📦 {l.quantity} · 💲{l.price} {l.currency} · 👁 {l.views ?? 0}{l.ending ? ` · ends ${l.ending}` : ''}{l.video ? ' · 🎬' : ''}
-              </span>
-            </div>
-            <span className={'chip ' + (l.state === 'active' ? 'ok' : '')}>{l.state}</span>
-          </div>
-        ))}
-        {!busy && !pageRows.length && <Empty>Is filter me koi listing nahi.</Empty>}
-
-        {rows.length > PAGE && (
-          <div className="card" style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-            <button className="btn sm ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>← Prev</button>
-            <span className="muted">Page {page + 1} / {pages} · {rows.length} listings</span>
-            <button className="btn sm ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Next →</button>
-          </div>
-        )}
-      </div>
-    </div>
-  )
-}
-
-/** One group in the filter sidebar (heading + rows). */
-function FGroup({ title, children }) {
-  return (
-    <div className="fgroup">
-      <div className="fgroup-title">{title}</div>
-      {children}
-    </div>
-  )
-}
-
-/** One clickable filter row: label ....... count */
-function FRow({ label, count, active, onClick }) {
-  return (
-    <button className={'frow' + (active ? ' active' : '')} onClick={onClick}>
-      <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{label}</span>
-      <span className="frow-count">{count}</span>
-    </button>
+      {rows.length > PAGE && (
+        <div className="card" style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
+          <button className="btn sm ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>← Prev</button>
+          <span className="muted">Page {page + 1} / {pages} · {rows.length} listings</span>
+          <button className="btn sm ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Next →</button>
+        </div>
+      )}
+    </>
   )
 }
 
