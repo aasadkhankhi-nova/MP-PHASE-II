@@ -24,7 +24,15 @@ const SORTS = [
 ]
 const PAGE = 25
 
-export default function EtsyStore({ es, state, filt, onDeleted }) {
+// "Refreshed 5 min ago" style label for the Refresh button
+function ago(t) {
+  const m = Math.round((Date.now() - t) / 60000)
+  if (m < 1) return 'abhi refresh hua'
+  if (m < 60) return `${m} min ago`
+  return `${Math.round(m / 60)}h ago`
+}
+
+export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCreate }) {
   const app = useApp()
   const storeId = app.curStoreId
   const [sort, setSort] = useState('exp_late')
@@ -43,13 +51,13 @@ export default function EtsyStore({ es, state, filt, onDeleted }) {
     (app.ws.listings || []).map((L) => L.etsy?.listingId).filter(Boolean).map(String)
   ), [app.ws.listings])
 
-  // filters + search + sort applied to the index (loaded in App.jsx)
+  // CHECKBOX filters: within a category = OR (Halloween + St Patrick = dono),
+  // across categories = AND (section bhi match ho AUR shipping bhi)
   const rows = useMemo(() => {
     let r = es.idx || []
-    if (filt.lp) r = r.filter((l) => lpIds.has(String(l.id)))
-    if (filt.sectionId) r = r.filter((l) => String(l.sectionId) === String(filt.sectionId))
-    if (filt.shipId) r = r.filter((l) => String(l.shipId) === String(filt.shipId))
-    if (filt.retId) r = r.filter((l) => String(l.retId) === String(filt.retId))
+    if ((filt.sections || []).length) { const set = new Set(filt.sections.map(String)); r = r.filter((l) => set.has(String(l.sectionId))) }
+    if ((filt.ships || []).length) { const set = new Set(filt.ships.map(String)); r = r.filter((l) => set.has(String(l.shipId))) }
+    if ((filt.rets || []).length) { const set = new Set(filt.rets.map(String)); r = r.filter((l) => set.has(String(l.retId))) }
     if (filt.video) r = r.filter((l) => l.video)
     if (q.trim()) r = r.filter((l) => l.title.toLowerCase().includes(q.toLowerCase()))
     const by = {
@@ -160,12 +168,20 @@ export default function EtsyStore({ es, state, filt, onDeleted }) {
     <>
       <div className="card">
         <div className="topbar" style={{ margin: 0, gap: 8, flexWrap: 'wrap' }}>
-          <h3 style={{ margin: 0 }}>{rows.length} listings <span className="chip">{state}{filt.sectionId || filt.shipId || filt.retId || filt.video || filt.lp ? ' · filtered' : ''}</span></h3>
+          <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            {/* Refresh shop — server cache chhor kar Etsy se naya scan */}
+            <button className="btn sm" style={{ background: '#b0206e' }} disabled={es.busy} onClick={onRefresh}>
+              ↻ Refresh shop{es.at ? ' · ' + ago(es.at) : ''}
+            </button>
+            <span className="chip">{rows.length} listings{((filt.sections||[]).length || (filt.ships||[]).length || (filt.rets||[]).length || filt.video) ? ' · filtered' : ''}</span>
+          </span>
           <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 170 }} />
+            <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 160 }} />
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
             </select>
+            {/* Create listing -> Launchpad (LP ka listing-maker) */}
+            <button className="btn sm" style={{ background: '#0e9384' }} onClick={onCreate}>＋ Create listing</button>
           </span>
         </div>
       </div>

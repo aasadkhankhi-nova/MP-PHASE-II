@@ -123,3 +123,8 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .rail-spacer { flex: 1; }
 .rail-avatar { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
 .rail-avatar.active { box-shadow: 0 0 0 2.5px var(--accent-soft), 0 0 0 4px var(--accent); }
+
+/* ---- checkbox filter rows in the sidebar ---- */
+.fchk { font-size: 14px; color: var(--mut); flex-shrink: 0; }
+.frow.checked { background: var(--accent-soft); font-weight: 600; }
+.frow.checked .fchk { color: var(--accent); }

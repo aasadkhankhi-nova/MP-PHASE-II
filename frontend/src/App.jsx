@@ -146,7 +146,7 @@ function Shell() {
 
   // ---- Etsy data lives HERE (shared by the sidebar menu + the screen) ----
   const [esState, setEsState] = useState('active')      // selected Status
-  const [esFilt, setEsFilt] = useState({})               // {sectionId, shipId, retId, video, lp}
+  const [esFilt, setEsFilt] = useState({ sections: [], ships: [], rets: [], video: false })  // CHECKBOX filters — multi-select, status badalne par bhi qaim
   const [es, setEs] = useState({ checked: false, connected: false, shopName: '', counts: null, names: { sections: [], ship: [], ret: [] }, idx: null, busy: false, err: null })
 
   // Ping the backend on load; keep re-checking while the free server wakes up.
@@ -165,7 +165,7 @@ function Shell() {
   // (sections / shipping profiles / return policies) for the sidebar menu.
   useEffect(() => {
     setEs({ checked: false, connected: false, shopName: '', counts: null, names: { sections: [], ship: [], ret: [] }, idx: null, busy: false, err: null })
-    setEsFilt({}); setEsState('active')
+    setEsFilt({ sections: [], ships: [], rets: [], video: false }); setEsState('active')
     if (!app.authed || !app.curStoreId) return
     const sid = app.curStoreId
     etsy.status(sid).then((r) => {
@@ -180,13 +180,15 @@ function Shell() {
   }, [app.authed, app.curStoreId])
 
   // Load the INDEX (every listing of the selected Status, with filter facts).
-  useEffect(() => {
+  // fresh=true skips the server cache — the "Refresh shop" button uses it.
+  const loadIndex = (fresh) => {
     if (!es.connected || !app.curStoreId) return
     setEs((e) => ({ ...e, busy: true, idx: null, err: null }))
-    etsy.index(app.curStoreId, esState)
-      .then((r) => setEs((e) => ({ ...e, idx: r.listings, busy: false })))
+    etsy.index(app.curStoreId, esState, fresh)
+      .then((r) => setEs((e) => ({ ...e, idx: r.listings, at: Date.now(), busy: false })))
       .catch((err) => setEs((e) => ({ ...e, err: String(err.message || err), busy: false })))
-  }, [es.connected, app.curStoreId, esState])
+  }
+  useEffect(() => { loadIndex(false) }, [es.connected, app.curStoreId, esState])
 
   // facet counts for the sidebar (listings per section / profile / policy)
   const facets = useMemo(() => {
@@ -204,10 +206,17 @@ function Shell() {
   const lpCount = (app.ws.listings || []).length
 
   // sidebar row helpers
-  const pickState = (id) => { setEsState(id); setEsFilt({}); setScreen('etsystore') }
+  // Status click: sirf status badalta hai — checked boxes waise hi lage rehte hain
+  const pickState = (id) => { setEsState(id); setScreen('etsystore') }
+  // checkbox toggle: value ko list me dalo / nikalo (multi-select, OR within a category)
   const pickFilt = (key, val) => {
     setScreen('etsystore')
-    setEsFilt((f) => ({ ...f, [key]: String(f[key]) === String(val) ? null : val }))
+    if (key === 'video') { setEsFilt((f) => ({ ...f, video: !f.video })); return }
+    setEsFilt((f) => {
+      const arr = f[key] || []
+      const has = arr.some((x) => String(x) === String(val))
+      return { ...f, [key]: has ? arr.filter((x) => String(x) !== String(val)) : [...arr, val] }
+    })
   }
   const onDeleted = (id) => setEs((e) => ({ ...e, idx: (e.idx || []).filter((l) => String(l.id) !== String(id)) }))
 
@@ -217,14 +226,16 @@ function Shell() {
   // GATE 2: must have a store open — otherwise force Settings.
   const needStore = app.ready && !app.curStore
   const eff = needStore ? 'account' : screen
-  const current = TITLES[eff] || null
+  const current = eff === 'etsystore'
+    ? { icon: '', label: (ES_STATES.find((x) => x.id === esState) || {}).label || 'Listings' }
+    : (TITLES[eff] || null)
 
   const body =
     eff === 'mockups' ? <Mockups /> :
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
-    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} /> :
+    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
 
@@ -276,7 +287,7 @@ function Shell() {
           <div className="nav-sec">Status</div>
           {ES_STATES.map((sx) => (
             <button key={sx.id}
-              className={'frow' + (eff === 'etsystore' && esState === sx.id && !esFilt.lp ? ' active' : '')}
+              className={'frow' + (eff === 'etsystore' && esState === sx.id ? ' active' : '')}
               onClick={() => pickState(sx.id)}>
               <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{sx.label}</span>
               <span className="frow-count">{es.counts ? es.counts[sx.id] : ''}</span>
@@ -300,47 +311,53 @@ function Shell() {
           {/* Sections — click = only that section's listings */}
           {es.names.sections.length > 0 && <>
             <div className="nav-sec">Sections</div>
-            {es.names.sections.map((sx) => (
-              <button key={sx.id}
-                className={'frow' + (eff === 'etsystore' && String(esFilt.sectionId) === String(sx.id) ? ' active' : '')}
-                onClick={() => pickFilt('sectionId', sx.id)}>
-                <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{sx.title}</span>
-                <span className="frow-count">{facets.section[sx.id] || 0}</span>
-              </button>
-            ))}
+            {es.names.sections.map((sx) => {
+              const on = (esFilt.sections || []).some((x) => String(x) === String(sx.id))
+              return (
+                <button key={sx.id} className={'frow' + (on ? ' checked' : '')} onClick={() => pickFilt('sections', sx.id)}>
+                  <span className="fchk">{on ? '☑' : '☐'}</span>
+                  <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{sx.title}</span>
+                  <span className="frow-count">{facets.section[sx.id] || 0}</span>
+                </button>
+              )
+            })}
           </>}
 
           {/* Shipping profiles */}
           {es.names.ship.length > 0 && <>
             <div className="nav-sec">Shipping profiles</div>
-            {es.names.ship.map((p) => (
-              <button key={p.id}
-                className={'frow' + (eff === 'etsystore' && String(esFilt.shipId) === String(p.id) ? ' active' : '')}
-                onClick={() => pickFilt('shipId', p.id)}>
-                <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>🚚 {p.title}</span>
-                <span className="frow-count">{facets.ship[p.id] || 0}</span>
-              </button>
-            ))}
+            {es.names.ship.map((p) => {
+              const on = (esFilt.ships || []).some((x) => String(x) === String(p.id))
+              return (
+                <button key={p.id} className={'frow' + (on ? ' checked' : '')} onClick={() => pickFilt('ships', p.id)}>
+                  <span className="fchk">{on ? '☑' : '☐'}</span>
+                  <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{p.title}</span>
+                  <span className="frow-count">{facets.ship[p.id] || 0}</span>
+                </button>
+              )
+            })}
           </>}
 
           {/* Return & exchange policies */}
           {es.names.ret.length > 0 && <>
             <div className="nav-sec">Returns & exchanges</div>
-            {es.names.ret.map((p) => (
-              <button key={p.id}
-                className={'frow' + (eff === 'etsystore' && String(esFilt.retId) === String(p.id) ? ' active' : '')}
-                onClick={() => pickFilt('retId', p.id)}>
-                <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{p.label}</span>
-                <span className="frow-count">{facets.ret[p.id] || 0}</span>
-              </button>
-            ))}
+            {es.names.ret.map((p) => {
+              const on = (esFilt.rets || []).some((x) => String(x) === String(p.id))
+              return (
+                <button key={p.id} className={'frow' + (on ? ' checked' : '')} onClick={() => pickFilt('rets', p.id)}>
+                  <span className="fchk">{on ? '☑' : '☐'}</span>
+                  <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>{p.label}</span>
+                  <span className="frow-count">{facets.ret[p.id] || 0}</span>
+                </button>
+              )
+            })}
           </>}
 
           {/* Media */}
           {es.connected && <>
             <div className="nav-sec">Media</div>
-            <button className={'frow' + (eff === 'etsystore' && esFilt.video ? ' active' : '')}
-              onClick={() => pickFilt('video', true)}>
+            <button className={'frow' + (esFilt.video ? ' checked' : '')} onClick={() => pickFilt('video', true)}>
+              <span className="fchk">{esFilt.video ? '☑' : '☐'}</span>
               <span className="ellip" style={{ flex: 1, textAlign: 'left' }}>🎬 With video</span>
               <span className="frow-count">{facets.video}</span>
             </button>
