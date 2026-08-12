@@ -296,16 +296,90 @@ router.post('/publish', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
-// GET /api/etsy/listings?storeId=...&state=draft|active
-// Peek at the shop's existing listings (first page) — shown in Settings.
+// ---------- 5. shop browser (the "Etsy Store" screen — like Vela) ----------
+
+// Turn Etsy's money object {amount:1398, divisor:100, currency_code:'USD'} into "13.98"
+const money = (p) => (p && p.amount ? (p.amount / (p.divisor || 100)).toFixed(2) : null)
+
+// GET /api/etsy/listings?storeId=...&state=active&offset=0&limit=25
+// One page of the shop's listings WITH thumbnail, price, stock, views.
 router.get('/listings', requireUser, async (req, res) => {
   try {
     const { storeId, state = 'active' } = req.query
+    const limit = Math.min(50, parseInt(req.query.limit) || 25)
+    const offset = Math.max(0, parseInt(req.query.offset) || 0)
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
-    const r = await etsy(conn, `/shops/${conn.shop_id}/listings?state=${encodeURIComponent(state)}&limit=25`)
-    res.json({ ok: true, count: r.count || 0, listings: (r.results || []).map((l) => ({ id: l.listing_id, title: l.title, state: l.state, views: l.views })) })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/listings?state=${encodeURIComponent(state)}&limit=${limit}&offset=${offset}&includes=Images`)
+    res.json({
+      ok: true,
+      count: r.count || 0,
+      listings: (r.results || []).map((l) => ({
+        id: l.listing_id,
+        title: l.title,
+        state: l.state,
+        quantity: l.quantity,
+        views: l.views,
+        price: money(l.price),
+        currency: l.price?.currency_code || 'USD',
+        img: l.images?.[0]?.url_170x135 || l.images?.[0]?.url_570xN || null,
+        ending: l.ending_timestamp ? new Date(l.ending_timestamp * 1000).toISOString().slice(0, 10) : null,
+      })),
+    })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/counts?storeId=...
+// How many listings in each state (for the tabs: Active 903 / Draft 4 / ...).
+// One tiny request per state (limit=1 — we only need the count).
+router.get('/counts', requireUser, async (req, res) => {
+  try {
+    const { storeId } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const states = ['active', 'draft', 'expired', 'inactive', 'sold_out']
+    const counts = {}
+    for (const st of states) {
+      try { const r = await etsy(conn, `/shops/${conn.shop_id}/listings?state=${st}&limit=1`); counts[st] = r.count || 0 }
+      catch { counts[st] = 0 }
+    }
+    res.json({ ok: true, counts })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/listing?storeId=...&id=...
+// Full details of ONE listing (read-only detail view): all images,
+// description, tags, price, personalization.
+router.get('/listing', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
+    res.json({
+      ok: true,
+      listing: {
+        id: l.listing_id,
+        title: l.title,
+        state: l.state,
+        description: l.description,
+        tags: l.tags || [],
+        materials: l.materials || [],
+        quantity: l.quantity,
+        views: l.views,
+        favorites: l.num_favorers,
+        price: money(l.price),
+        currency: l.price?.currency_code || 'USD',
+        url: l.url,
+        images: (l.images || []).map((im) => im.url_570xN || im.url_fullxfull).filter(Boolean),
+        personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '' },
+        section_id: l.shop_section_id || null,
+        created: l.created_timestamp ? new Date(l.created_timestamp * 1000).toISOString().slice(0, 10) : null,
+      },
+    })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 

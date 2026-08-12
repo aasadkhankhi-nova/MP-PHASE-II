@@ -16,6 +16,7 @@ import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import Results from './screens/Results.jsx'
+import EtsyStore from './screens/EtsyStore.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
 
@@ -28,6 +29,7 @@ const NAV = [
   { sec: 'Workspace' },
   { id: 'dash', icon: '🏠', label: 'Dashboard' },
   { id: 'listings', icon: '🧾', label: 'Listings' },
+  { id: 'etsystore', icon: '🛍️', label: 'Etsy Store' },
   { sec: 'Library' },
   { id: 'mockups', icon: '🖼️', label: 'Mockups' },
   { id: 'sets', icon: '🗂️', label: 'Sets' },
@@ -84,6 +86,7 @@ function Shell() {
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
+    eff === 'etsystore' ? <EtsyStore /> :
     eff === 'results' ? <Results /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />

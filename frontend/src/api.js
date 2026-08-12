@@ -169,7 +169,9 @@ export const etsy = {
   disconnect: (storeId) => api('/api/etsy/disconnect', { method: 'POST', body: JSON.stringify({ storeId }) }),
   shippingProfiles: (storeId) => api(`/api/etsy/shipping-profiles?storeId=${storeId}`),  // for the publish form
   taxonomy: (query) => api(`/api/etsy/taxonomy?q=${encodeURIComponent(query)}`),         // category search
-  listings: (storeId, state = 'active') => api(`/api/etsy/listings?storeId=${storeId}&state=${state}`),
+  listings: (storeId, state = 'active', offset = 0) => api(`/api/etsy/listings?storeId=${storeId}&state=${state}&offset=${offset}`),
+  counts: (storeId) => api(`/api/etsy/counts?storeId=${storeId}`),               // per-state totals for the tabs
+  listing: (storeId, id) => api(`/api/etsy/listing?storeId=${storeId}&id=${id}`), // one listing, full detail
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 
