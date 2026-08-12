@@ -22,7 +22,7 @@ const SORTS = [
   { id: 'exp_soon', label: 'Expiration: soonest first' },
   { id: 'exp_late', label: 'Expiration: latest first' },
 ]
-const PAGE = 25
+const PAGE = 40
 
 // "Refreshed 5 min ago" style label for the Refresh button
 function ago(t) {
@@ -42,9 +42,11 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
   const [detail, setDetail] = useState(null)
   const [edit, setEdit] = useState(false)
   const [err, setErr] = useState(null)
+  const [sel, setSel] = useState(() => new Set())   // selected listing ids (checkboxes)
+  const [selMenu, setSelMenu] = useState(false)      // header checkbox dropdown open?
 
-  // jump back to page 1 whenever the filters/status change
-  useEffect(() => { setPage(0) }, [state, filt])
+  // jump back to page 1 + clear selection whenever the filters/status change
+  useEffect(() => { setPage(0); setSel(new Set()) }, [state, filt])
 
   // ListPilot-made listings (for the 🚀 Launchpad filter)
   const lpIds = useMemo(() => new Set(
@@ -160,27 +162,44 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
     )
   }
 
-  // ---------- list view ----------
+  // ---------- list view (Vela-style TABLE) ----------
   const pages = Math.max(1, Math.ceil(rows.length / PAGE))
   const pageRows = rows.slice(page * PAGE, page * PAGE + PAGE)
+  const secName = (id) => (es.names?.sections || []).find((x) => String(x.id) === String(id))?.title || ''
+
+  // selection helpers (header checkbox dropdown: All / Current page / None)
+  const selAll = () => { setSel(new Set(rows.map((l) => String(l.id)))); setSelMenu(false) }
+  const selPage = () => { setSel(new Set(pageRows.map((l) => String(l.id)))); setSelMenu(false) }
+  const selNone = () => { setSel(new Set()); setSelMenu(false) }
+  const selTog = (id) => setSel((old) => {
+    const n = new Set(old); const k = String(id)
+    if (n.has(k)) n.delete(k); else n.add(k)
+    return n
+  })
+  const pageAllSel = pageRows.length > 0 && pageRows.every((l) => sel.has(String(l.id)))
+
+  // page-number buttons: 1 … around current … last (Vela/Etsy style)
+  const pageNums = []
+  for (let i = 0; i < pages; i++) {
+    if (i === 0 || i === pages - 1 || Math.abs(i - page) <= 1) pageNums.push(i)
+    else if (pageNums[pageNums.length - 1] !== '…') pageNums.push('…')
+  }
 
   return (
     <>
       <div className="card">
         <div className="topbar" style={{ margin: 0, gap: 8, flexWrap: 'wrap' }}>
           <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            {/* Refresh shop — server cache chhor kar Etsy se naya scan */}
             <button className="btn sm" style={{ background: '#b0206e' }} disabled={es.busy} onClick={onRefresh}>
               ↻ Refresh shop{es.at ? ' · ' + ago(es.at) : ''}
             </button>
-            <span className="chip">{rows.length} listings{((filt.sections||[]).length || (filt.ships||[]).length || (filt.rets||[]).length || filt.video) ? ' · filtered' : ''}</span>
+            {sel.size > 0 && <span className="chip">{sel.size} selected</span>}
           </span>
           <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 160 }} />
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
             </select>
-            {/* Create listing -> Launchpad (LP ka listing-maker) */}
             <button className="btn sm" style={{ background: '#0e9384' }} onClick={onCreate}>＋ Create listing</button>
           </span>
         </div>
@@ -189,25 +208,62 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
       {(err || es.err) && <div className="card"><p className="muted">⚠ {err || es.err}</p></div>}
       {es.busy && <div className="card"><p className="muted">⏳ Poori shop ka index ban raha hai (pehli bar 10–20 sec)…</p></div>}
 
-      {!es.busy && pageRows.map((l) => (
-        <div key={l.id} className="card etsy-row" onClick={() => open(l.id)}>
-          <div className="etsy-thumb">{l.img ? <img src={l.img} alt="" /> : <span>🖼</span>}</div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <b className="ellip" style={{ display: 'block' }}>{l.title}</b>
-            <span className="muted" style={{ fontSize: 12 }}>
-              📦 {l.quantity} · 💲{l.price} {l.currency} · 👁 {l.views ?? 0}{l.ending ? ` · ends ${l.ending}` : ''}{l.video ? ' · 🎬' : ''}
+      {!es.busy && (
+        <div className="card" style={{ padding: 0, overflow: 'visible' }}>
+          {/* ---- table header ---- */}
+          <div className="etbl-head">
+            <span className="etbl-selwrap">
+              {/* header checkbox = current page; the ▾ opens All / Current page / None */}
+              <input type="checkbox" checked={pageAllSel} onChange={() => (pageAllSel ? selNone() : selPage())} />
+              <button className="etbl-caret" onClick={() => setSelMenu(!selMenu)}>▾</button>
+              {selMenu && (
+                <div className="etbl-selmenu">
+                  <button onClick={selAll}>All listings ({rows.length})</button>
+                  <button onClick={selPage}>Current page ({pageRows.length})</button>
+                  {/* None sirf tab dabta hai jab kuch selected ho — warna grey */}
+                  <button disabled={sel.size === 0} onClick={selNone}>None</button>
+                </div>
+              )}
             </span>
+            <span></span>
+            <span>Title</span>
+            <span>Stock</span>
+            <span>Price</span>
+            <span>Expires on</span>
+            <span>Section</span>
           </div>
-          <span className={'chip ' + (l.state === 'active' ? 'ok' : '')}>{l.state}</span>
-        </div>
-      ))}
-      {!es.busy && !pageRows.length && <Empty>Is filter me koi listing nahi.</Empty>}
 
-      {rows.length > PAGE && (
-        <div className="card" style={{ display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center' }}>
-          <button className="btn sm ghost" disabled={page === 0} onClick={() => setPage(page - 1)}>← Prev</button>
-          <span className="muted">Page {page + 1} / {pages} · {rows.length} listings</span>
-          <button className="btn sm ghost" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>Next →</button>
+          {/* ---- rows ---- */}
+          {pageRows.map((l) => (
+            <div key={l.id} className={'etbl-row' + (sel.has(String(l.id)) ? ' sel' : '')} onClick={() => open(l.id)}>
+              <span onClick={(e) => e.stopPropagation()}>
+                <input type="checkbox" checked={sel.has(String(l.id))} onChange={() => selTog(l.id)} />
+              </span>
+              <span className="etsy-thumb">{l.img ? <img src={l.img} alt="" /> : '🖼'}</span>
+              <span className="ellip" style={{ fontWeight: 600 }}>{l.title}{l.video ? ' 🎬' : ''}</span>
+              <span>{l.quantity}</span>
+              <span>${l.price}</span>
+              <span>{l.ending ? l.ending.slice(5).replace('-', '/') + '/' + l.ending.slice(2, 4) : '—'}</span>
+              <span className="ellip">{secName(l.sectionId) || '—'}</span>
+            </div>
+          ))}
+          {!pageRows.length && <div style={{ padding: 20 }}><Empty>Is filter me koi listing nahi.</Empty></div>}
+        </div>
+      )}
+
+      {/* ---- bottom bar: page numbers (left) + counter (right) ---- */}
+      {!es.busy && rows.length > 0 && (
+        <div className="card etbl-foot">
+          <span style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+            <span className="muted" style={{ marginRight: 6 }}>Page</span>
+            <button className="pgbtn" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
+            {pageNums.map((n, i) => n === '…'
+              ? <span key={'e' + i} className="muted">…</span>
+              : <button key={n} className={'pgbtn' + (n === page ? ' on' : '')} onClick={() => setPage(n)}>{n + 1}</button>
+            )}
+            <button className="pgbtn" disabled={page >= pages - 1} onClick={() => setPage(page + 1)}>›</button>
+          </span>
+          <span className="muted">Viewing {page * PAGE + 1} – {Math.min(rows.length, (page + 1) * PAGE)} of {rows.length} products</span>
         </div>
       )}
     </>
