@@ -370,6 +370,12 @@ router.get('/listing', requireUser, async (req, res) => {
     const conn = await getConn(storeId)
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
     const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
+    // current attribute values (Sleeve length: Short sleeve, ...) — best-effort
+    let props = []
+    try {
+      const pr = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/properties`)
+      props = (pr.results || []).map((p) => ({ propertyId: p.property_id, name: p.property_name, valueIds: p.value_ids || [], values: p.values || [] }))
+    } catch {}
     res.json({
       ok: true,
       listing: {
@@ -389,6 +395,12 @@ router.get('/listing', requireUser, async (req, res) => {
         personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '' },
         section_id: l.shop_section_id || null,
         autoRenew: !!l.should_auto_renew,
+        taxonomyId: l.taxonomy_id || null,
+        whoMade: l.who_made || null,
+        whenMade: l.when_made || null,
+        shippingProfileId: l.shipping_profile_id || null,
+        returnPolicyId: l.return_policy_id || null,
+        properties: props,
         created: l.created_timestamp ? new Date(l.created_timestamp * 1000).toISOString().slice(0, 10) : null,
       },
     })
@@ -428,10 +440,112 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.materials !== undefined) body.materials = (patch.materials || []).slice(0, 13)
     if (patch.sectionId !== undefined && patch.sectionId) body.shop_section_id = Number(patch.sectionId)
     if (patch.autoRenew !== undefined) body.should_auto_renew = patch.autoRenew ? 'true' : 'false'
+    if (patch.whoMade !== undefined) body.who_made = String(patch.whoMade)
+    if (patch.whenMade !== undefined) body.when_made = String(patch.whenMade)
+    if (patch.shippingProfileId !== undefined && patch.shippingProfileId) body.shipping_profile_id = Number(patch.shippingProfileId)
+    if (patch.returnPolicyId !== undefined && patch.returnPolicyId) body.return_policy_id = Number(patch.returnPolicyId)
     if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'kuch badla hi nahi' })
     const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form(body) })
     res.json({ ok: true, title: l.title })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// ---------- 7. EDIT (E3): category properties, enums, return policies ----------
+
+// GET /api/etsy/properties?storeId=...&taxonomyId=...
+// For a category, Etsy tells us WHICH attributes exist (Sleeve length,
+// Neckline, Primary color, Holiday...) and the EXACT allowed options of each —
+// the same lists Etsy shows in its own listing form.
+router.get('/properties', requireUser, async (req, res) => {
+  try {
+    const { taxonomyId } = req.query
+    if (!taxonomyId) return res.status(400).json({ ok: false, error: 'taxonomyId chahiye' })
+    const r = await fetch(`https://api.etsy.com/v3/application/seller-taxonomy/nodes/${encodeURIComponent(taxonomyId)}/properties`, { headers: { 'x-api-key': apiKeyHdr() } })
+    const j = await r.json()
+    if (!r.ok) throw new Error(j.error || 'properties fetch failed')
+    res.json({
+      ok: true,
+      properties: (j.results || []).map((p) => ({
+        propertyId: p.property_id,
+        name: p.display_name || p.name,
+        required: !!p.is_required,
+        multi: (p.max_values_allowed || 1) > 1,
+        options: (p.possible_values || []).map((v) => ({ id: v.value_id, name: v.name })),
+      })).filter((p) => p.options.length),   // only dropdown-style attributes
+    })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/property { storeId, id, propertyId, valueIds[], values[] }
+// Set (or clear) ONE attribute on the listing — e.g. Sleeve length = Short sleeve.
+router.post('/listing/property', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, propertyId, valueIds = [], values = [] } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!valueIds.length) {
+      // empty selection = remove the attribute from the listing
+      await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/properties/${encodeURIComponent(propertyId)}`, { method: 'DELETE' })
+      return res.json({ ok: true, cleared: true })
+    }
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/properties/${encodeURIComponent(propertyId)}`, {
+      method: 'PUT',
+      body: form({ value_ids: valueIds, values }),
+    })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/return-policies?storeId=...
+router.get('/return-policies', requireUser, async (req, res) => {
+  try {
+    const { storeId } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/policies/return`)
+    res.json({
+      ok: true,
+      policies: (r.results || []).map((p) => ({
+        id: p.return_policy_id,
+        label: p.accepts_returns || p.accepts_exchanges
+          ? `Returns${p.accepts_returns ? ' ✓' : ' ✗'} · Exchanges${p.accepts_exchanges ? ' ✓' : ' ✗'}${p.return_deadline ? ' · ' + p.return_deadline + ' days' : ''}`
+          : 'No returns or exchanges',
+      })),
+    })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/enums — who_made / when_made ke CURRENT allowed values.
+// We read them from Etsy's own machine-readable spec (cached 24h) so the
+// dropdowns never go stale when Etsy renames an era (e.g. 2020_2026).
+let ENUMS = { at: 0, whoMade: [], whenMade: [] }
+router.get('/enums', requireUser, async (_req, res) => {
+  try {
+    if (Date.now() - ENUMS.at > 24 * 3600 * 1000 || !ENUMS.whenMade.length) {
+      const r = await fetch('https://www.etsy.com/openapi/generated/oas/3.0.0.json')
+      const spec = await r.json()
+      const found = { who_made: null, when_made: null }
+      const walk = (o) => {
+        if (!o || typeof o !== 'object') return
+        for (const [k, v] of Object.entries(o)) {
+          if ((k === 'who_made' || k === 'when_made') && v && Array.isArray(v.enum) && !found[k]) found[k] = v.enum
+          walk(v)
+        }
+      }
+      walk(spec)
+      ENUMS = {
+        at: Date.now(),
+        whoMade: found.who_made || ['i_did', 'someone_else', 'collective'],
+        whenMade: found.when_made || ['made_to_order', '2020_2026', '2010_2019', 'before_2010'],
+      }
+    }
+    res.json({ ok: true, whoMade: ENUMS.whoMade, whenMade: ENUMS.whenMade })
+  } catch (e) {
+    // spec fetch failed -> sensible fallback so the editor still works
+    res.json({ ok: true, whoMade: ['i_did', 'someone_else', 'collective'], whenMade: ['made_to_order', '2020_2026', '2010_2019', 'before_2010'] })
+  }
 })
 
 export default router

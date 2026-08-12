@@ -174,6 +174,10 @@ export const etsy = {
   listing: (storeId, id) => api(`/api/etsy/listing?storeId=${storeId}&id=${id}`), // one listing, full detail
   sections: (storeId) => api(`/api/etsy/sections?storeId=${storeId}`),            // shop's own sections (for the editor)
   update: (storeId, id, patch) => api('/api/etsy/listing/update', { method: 'POST', body: JSON.stringify({ storeId, id, patch }) }), // save edits to Etsy
+  properties: (storeId, taxonomyId) => api(`/api/etsy/properties?storeId=${storeId}&taxonomyId=${taxonomyId}`), // category ke attribute dropdowns
+  setProperty: (storeId, id, propertyId, valueIds, values) => api('/api/etsy/listing/property', { method: 'POST', body: JSON.stringify({ storeId, id, propertyId, valueIds, values }) }),
+  returnPolicies: (storeId) => api(`/api/etsy/return-policies?storeId=${storeId}`),
+  enums: () => api('/api/etsy/enums'),   // who_made / when_made ke current options
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 

@@ -214,13 +214,33 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [sections, setSections] = useState(null)
   const [sectionId, setSectionId] = useState(detail.section_id || '')
   const [autoRenew, setAutoRenew] = useState(!!detail.autoRenew)
+  // ---- E3: details ----
+  const [enums, setEnums] = useState(null)              // who_made / when_made options (live)
+  const [whoMade, setWhoMade] = useState(detail.whoMade || 'i_did')
+  const [whenMade, setWhenMade] = useState(detail.whenMade || 'made_to_order')
+  const [shipProfiles, setShipProfiles] = useState(null)
+  const [shipId, setShipId] = useState(detail.shippingProfileId || '')
+  const [retPolicies, setRetPolicies] = useState(null)
+  const [retId, setRetId] = useState(detail.returnPolicyId || '')
+  const [props, setProps] = useState(null)              // category ke attribute dropdowns
+  const [propSel, setPropSel] = useState(() => {
+    // current attribute values from the listing -> {propertyId: valueId}
+    const m = {}
+    for (const p of detail.properties || []) if (p.valueIds?.length) m[p.propertyId] = String(p.valueIds[0])
+    return m
+  })
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
-  // load the shop's real sections for the dropdown
+  // load everything the editor's dropdowns need — all LIVE from Etsy
   useEffect(() => {
     etsy.sections(storeId).then((r) => setSections(r.sections)).catch(() => setSections([]))
-  }, [storeId])
+    etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['i_did'], whenMade: ['made_to_order'] }))
+    etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => setShipProfiles([]))
+    etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => setRetPolicies([]))
+    if (detail.taxonomyId) etsy.properties(storeId, detail.taxonomyId).then((r) => setProps(r.properties)).catch(() => setProps([]))
+    else setProps([])
+  }, [storeId, detail.taxonomyId])
 
   const addTag = () => {
     const t = tagIn.trim().toLowerCase()
@@ -240,7 +260,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const save = async () => {
     setBusy(true); setMsg(null)
     try {
-      // send only what actually changed — smaller request, safer
+      // 1) main fields — send only what actually changed
       const patch = {}
       if (title !== detail.title) patch.title = title
       if (desc !== detail.description) patch.description = desc
@@ -248,14 +268,35 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       if (JSON.stringify(mats) !== JSON.stringify(detail.materials)) patch.materials = mats
       if (String(sectionId || '') !== String(detail.section_id || '')) patch.sectionId = sectionId
       if (autoRenew !== !!detail.autoRenew) patch.autoRenew = autoRenew
-      if (!Object.keys(patch).length) { setMsg('Kuch badla hi nahi 🙂'); setBusy(false); return }
-      await etsy.update(storeId, detail.id, patch)
+      if (whoMade !== detail.whoMade) patch.whoMade = whoMade
+      if (whenMade !== detail.whenMade) patch.whenMade = whenMade
+      if (String(shipId || '') !== String(detail.shippingProfileId || '')) patch.shippingProfileId = shipId
+      if (String(retId || '') !== String(detail.returnPolicyId || '')) patch.returnPolicyId = retId
+      if (Object.keys(patch).length) await etsy.update(storeId, detail.id, patch)
+
+      // 2) attributes (Sleeve length etc.) — one call per CHANGED property
+      let propChanges = 0
+      const orig = {}
+      for (const p of detail.properties || []) if (p.valueIds?.length) orig[p.propertyId] = String(p.valueIds[0])
+      for (const p of props || []) {
+        const now = propSel[p.propertyId] || ''
+        const was = orig[p.propertyId] || ''
+        if (now === was) continue
+        const opt = p.options.find((o) => String(o.id) === now)
+        await etsy.setProperty(storeId, detail.id, p.propertyId, now ? [Number(now)] : [], opt ? [opt.name] : [])
+        propChanges++
+      }
+
+      if (!Object.keys(patch).length && !propChanges) { setMsg('Kuch badla hi nahi 🙂'); setBusy(false); return }
       setMsg('✅ Etsy par save ho gaya')
       setTimeout(onDone, 700)   // reload the fresh listing
     } catch (e) {
       setMsg('⚠ ' + (e.message || e))
     } finally { setBusy(false) }
   }
+
+  // "made_to_order" -> "Made to order", "2020_2026" -> "2020 - 2026"
+  const nice = (v) => String(v).replace(/_/g, ' ').replace(/(\d{4}) (\d{4})/, '$1 - $2').replace(/^\w/, (c) => c.toUpperCase())
 
   return (
     <>
@@ -313,8 +354,64 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         <p className="muted" style={{ fontSize: 12 }}>
           💲 {detail.price} {detail.currency} · 📦 stock {detail.quantity} — price/quantity/variations agle update (E4) me edit honge.
         </p>
+      </div>
 
-        <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+      {/* ---- E3: Details — sab dropdowns LIVE Etsy se ---- */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>📋 Details</h3>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Who made it?</label>
+            <select value={whoMade} onChange={(e) => setWhoMade(e.target.value)} style={{ minWidth: 150 }}>
+              {(enums?.whoMade || [whoMade]).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
+            </select>
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>When did you make it?</label>
+            <select value={whenMade} onChange={(e) => setWhenMade(e.target.value)} style={{ minWidth: 150 }}>
+              {(enums?.whenMade || [whenMade]).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
+            </select>
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
+            <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 170 }}>
+              {!shipProfiles && <option value="">⏳</option>}
+              {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+            </select>
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Return policy</label>
+            <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} style={{ minWidth: 200 }}>
+              <option value="">— default —</option>
+              {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+          </span>
+        </div>
+
+        {/* category attributes: the SAME dropdowns + options Etsy shows,
+            loaded live for this listing's category (Sleeve length, Neckline...) */}
+        <h3 style={{ margin: '4px 0 8px' }}>🎛 Attributes <span className="chip">{props ? props.length : '⏳'}</span></h3>
+        {props === null && <p className="muted">⏳ Etsy se attributes load ho rahe hain…</p>}
+        {props && !props.length && <p className="muted">Is category ke liye koi dropdown-attribute nahi.</p>}
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+          {(props || []).map((p) => (
+            <span key={p.propertyId}>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>{p.name}{p.required ? ' *' : ''}</label>
+              <select
+                value={propSel[p.propertyId] || ''}
+                onChange={(e) => setPropSel({ ...propSel, [p.propertyId]: e.target.value })}
+                style={{ minWidth: 160 }}
+              >
+                <option value="">— choose —</option>
+                {p.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+              </select>
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="card">
+        <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save to Etsy'}</button>
           <button className="btn ghost" disabled={busy} onClick={onCancel}>Cancel</button>
         </div>
