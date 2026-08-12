@@ -203,6 +203,31 @@ export function AppStateProvider({ children }) {
     },
     async selectStore(id) { await openStore(id) },
 
+    // ---- import (MP Phase I backup / project files) ----
+    // Creates a NEW store and fills it with the imported mockups/designs/sets.
+    // Images are uploaded to cloud Storage one by one (when logged in),
+    // then the whole workspace is pushed in one go. onProgress(i, total).
+    async importStore(name, incoming, onProgress) {
+      const st = await api.addStore(name || 'Imported store')
+      const wsNew = {
+        mockups: incoming.mockups || [],
+        designs: incoming.designs || [],
+        sets: incoming.sets || [],
+        listings: [],
+      }
+      const items = [...wsNew.mockups, ...wsNew.designs]
+      for (let i = 0; i < items.length; i++) {
+        if (onProgress) onProgress(i + 1, items.length)
+        if (authed && items[i].dataUrl && !items[i].imageUrl) {
+          try { items[i].imageUrl = await uploadImage(items[i].dataUrl, items[i].name || 'img') } catch {}
+        }
+      }
+      await kvSet('ws:' + st.id, wsNew)
+      if (authed) { try { await cloudWs.push(st.id, toCloud(wsNew)) } catch (e) { console.error('import push', e) } }
+      await openStore(st.id)
+      return st
+    },
+
     // ---- mockups ----
     // On upload: read file -> auto light/dark tag -> (if logged in) upload
     // the image to cloud Storage so other devices can see it too.

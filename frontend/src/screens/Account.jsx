@@ -78,6 +78,9 @@ export default function Account() {
       {/* ---- Etsy connection for the CURRENT store ---- */}
       {app.authed && app.curStoreId && <EtsyConnect storeId={app.curStoreId} storeName={app.curStore?.name} />}
 
+      {/* ---- import old MP Phase I data (backup/project files) ---- */}
+      {app.authed && <ImportCard />}
+
       {/* ---- security: change password (only when logged in) ---- */}
       {app.authed && <ChangePassword />}
 
@@ -250,6 +253,88 @@ function EtsyConnect({ storeId, storeName }) {
       <p className="muted" style={{ marginTop: 10, fontSize: 11.5 }}>
         The term 'Etsy' is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.
       </p>
+    </div>
+  )
+}
+
+/**
+ * ImportCard — bring old MP Phase I data into ListPilot.
+ * Accepts BOTH Phase I file types:
+ *   .mpbackup — "Backup ALL data": every store + its mockups/boxes/designs/sets
+ *   .mpproj   — single-store "Save project" export
+ * Each Phase I store becomes a NEW ListPilot store (cloud-synced).
+ * Old designs might not carry a Design# — they default to "Single image".
+ */
+function ImportCard() {
+  const app = useApp()
+  const [prog, setProg] = useState(null)   // "store 1/3 · image 12/80"
+  const [iMsg, setIMsg] = useState(null)
+
+  const mapDesign = (d) => ({
+    id: d.id, name: d.name, dataUrl: d.dataUrl,
+    placement: d.placement || 'front',
+    variant: d.variant || 'universal',
+    dnum: d.dnum || 'single',
+  })
+  const mapMockup = (m) => ({
+    id: m.id, name: m.name, dataUrl: m.dataUrl, w: m.w, h: m.h,
+    colorTag: m.colorTag || 'light', setIds: m.setIds || [], boxes: m.boxes || [],
+  })
+
+  const doImport = async (file) => {
+    if (!file) return
+    setIMsg(null)
+    try {
+      const data = JSON.parse(await file.text())
+      // which stores are inside this file?
+      let stores = []
+      if (data.kind === 'mpbackup' && Array.isArray(data.stores)) {
+        stores = data.stores
+          .filter((s) => s.ws && ((s.ws.mockups || []).length || (s.ws.designs || []).length))
+          .map((s) => ({ name: s.store?.name || 'Imported', ws: s.ws }))
+      } else if (data.mockups || data.designs) {
+        // .mpproj — one store's data at the top level
+        stores = [{ name: file.name.replace(/\.[^.]+$/, ''), ws: data }]
+      }
+      if (!stores.length) throw new Error('Is file me koi store data nahi mila')
+      if (!confirm(`${stores.length} store(s) milen — har ek ListPilot me NAYA store banega. Import shuru karein?`)) return
+
+      for (let si = 0; si < stores.length; si++) {
+        const s = stores[si]
+        const ws = {
+          mockups: (s.ws.mockups || []).map(mapMockup),
+          designs: (s.ws.designs || []).map(mapDesign),
+          sets: (s.ws.sets || []).map((x) => ({ id: x.id, name: x.name })),
+        }
+        await app.importStore(s.name, ws, (i, n) =>
+          setProg(`store ${si + 1}/${stores.length} (${s.name}) · image ${i}/${n} upload…`))
+      }
+      setProg(null)
+      setIMsg(`✅ Import mukammal — ${stores.length} store(s) aa gaye. Sidebar dropdown se dekhein!`)
+    } catch (e) {
+      setProg(null)
+      setIMsg('⚠ ' + (e.message || e))
+    }
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>📂 Import (purani MP Phase I app se)</h3>
+      <p className="muted">
+        Phase I me Dashboard par <b>"💾 Backup ALL data"</b> daba kar jo <b>.mpbackup</b> file bane, usay yahan
+        chunein — saare stores (mockups, boxes, designs, sets samet) ListPilot me aa jayenge.
+        Single-store <b>.mpproj</b> file bhi chalti hai.
+      </p>
+      {prog ? (
+        <p className="muted">⏳ {prog}</p>
+      ) : (
+        <label className="btn ghost" style={{ cursor: 'pointer' }}>
+          📂 File chunein (.mpbackup / .mpproj)
+          <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
+            onChange={(e) => { doImport(e.target.files[0]); e.target.value = '' }} />
+        </label>
+      )}
+      {iMsg && <p className="muted" style={{ marginTop: 8 }}>{iMsg}</p>}
     </div>
   )
 }
