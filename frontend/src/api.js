@@ -178,6 +178,8 @@ export const etsy = {
   setProperty: (storeId, id, propertyId, valueIds, values) => api('/api/etsy/listing/property', { method: 'POST', body: JSON.stringify({ storeId, id, propertyId, valueIds, values }) }),
   returnPolicies: (storeId) => api(`/api/etsy/return-policies?storeId=${storeId}`),
   enums: () => api('/api/etsy/enums'),   // who_made / when_made ke current options
+  inventory: (storeId, id) => api(`/api/etsy/inventory?storeId=${storeId}&id=${id}`),                  // variations (per-combo price/qty)
+  saveInventory: (storeId, id, inv) => api('/api/etsy/inventory/update', { method: 'POST', body: JSON.stringify({ storeId, id, ...inv }) }),
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 

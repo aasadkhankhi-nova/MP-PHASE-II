@@ -350,11 +350,10 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           </label>
         </div>
 
-        {/* read-only for now: inventory lives in E4 */}
-        <p className="muted" style={{ fontSize: 12 }}>
-          💲 {detail.price} {detail.currency} · 📦 stock {detail.quantity} — price/quantity/variations agle update (E4) me edit honge.
-        </p>
       </div>
+
+      {/* ---- E4: variations / inventory (its own Save — replace-all on Etsy) ---- */}
+      <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency} />
 
       {/* ---- E3: Details — sab dropdowns LIVE Etsy se ---- */}
       <div className="card">
@@ -418,5 +417,133 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
       </div>
     </>
+  )
+}
+
+/**
+ * InventoryEditor (E4) — per-variation price / quantity / on-off / SKU,
+ * like Vela's Variations tab. Loads the listing's inventory live from Etsy.
+ * Etsy's rule: saving REPLACES the whole inventory, so we always send every
+ * combo back (with its original identity) plus the edited numbers.
+ * Note: which price varies by which dimension (price_on_property) is kept
+ * EXACTLY as it is on Etsy — we edit values, not the structure.
+ */
+function InventoryEditor({ storeId, listingId, currency }) {
+  const [inv, setInv] = useState(null)     // {priceOnProperty, products: [...]}
+  const [rows, setRows] = useState([])     // editable copy of products
+  const [bulkPrice, setBulkPrice] = useState('')
+  const [bulkQty, setBulkQty] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    setInv(null); setMsg(null)
+    etsy.inventory(storeId, listingId)
+      .then((r) => { setInv(r); setRows(r.products.map((p) => ({ ...p }))) })
+      .catch((e) => setMsg('⚠ ' + e.message))
+  }, [storeId, listingId])
+
+  const upd = (i, patch) => setRows(rows.map((r, x) => (x === i ? { ...r, ...patch } : r)))
+  const priceVaries = (inv?.priceOnProperty || []).length > 0
+  const qtyVaries = (inv?.quantityOnProperty || []).length > 0
+
+  // bulk helpers: set every row's price/qty in one go
+  const applyBulk = () => {
+    setRows(rows.map((r) => ({
+      ...r,
+      ...(bulkPrice !== '' ? { price: bulkPrice } : {}),
+      ...(bulkQty !== '' ? { quantity: bulkQty } : {}),
+    })))
+    setMsg('✎ Sab rows par laga diya — ab Save variations dabayein')
+  }
+
+  const save = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      for (const r of rows) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho')
+      // Etsy rule: if price does NOT vary by a property, every combo must share
+      // one price — copy row 1's price everywhere to be safe (same for qty).
+      let out = rows
+      if (!priceVaries) out = out.map((r) => ({ ...r, price: rows[0].price }))
+      if (!qtyVaries) out = out.map((r) => ({ ...r, quantity: rows[0].quantity }))
+      await etsy.saveInventory(storeId, listingId, {
+        priceOnProperty: inv.priceOnProperty,
+        quantityOnProperty: inv.quantityOnProperty,
+        skuOnProperty: inv.skuOnProperty,
+        products: out,
+      })
+      setMsg('✅ Variations Etsy par save ho gayin')
+    } catch (e) {
+      setMsg('⚠ ' + (e.message || e))
+    } finally { setBusy(false) }
+  }
+
+  if (!inv) return <div className="card"><p className="muted">{msg || '⏳ Variations load ho rahi hain…'}</p></div>
+
+  // simple listing (no variations): one price + one quantity
+  if (rows.length === 1 && !rows[0].propertyValues.length) {
+    return (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>🧩 Price & Quantity</h3>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price ({currency})</label>
+            <input type="number" min="0.2" step="0.01" value={rows[0].price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 120 }} />
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Quantity</label>
+            <input type="number" min="0" value={rows[0].quantity} onChange={(e) => upd(0, { quantity: e.target.value })} style={{ width: 100 }} />
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU</label>
+            <input value={rows[0].sku} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 140 }} />
+          </span>
+          <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
+        </div>
+        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      </div>
+    )
+  }
+
+  // variations table
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🧩 Variations <span className="chip">{rows.length} combos</span></h3>
+      <p className="muted" style={{ fontSize: 12 }}>
+        {priceVaries ? 'Price har combo ki alag hai.' : 'Price sab combos ki EK hai (Etsy ka rule — pehli row ki price sab par lagegi).'}
+        {' '}Quantity {qtyVaries ? 'har combo ki alag.' : 'sab ki ek.'}
+      </p>
+
+      {/* bulk row — set everything at once */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
+        <span className="muted" style={{ fontSize: 12 }}>Sab par lagao:</span>
+        <input type="number" placeholder="price" step="0.01" value={bulkPrice} onChange={(e) => setBulkPrice(e.target.value)} style={{ width: 100 }} />
+        <input type="number" placeholder="qty" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} style={{ width: 90 }} />
+        <button className="btn sm ghost" onClick={applyBulk}>Apply to all</button>
+      </div>
+
+      {/* one row per combo */}
+      <div style={{ maxHeight: 420, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
+        {rows.map((r, i) => (
+          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid var(--line)', opacity: r.enabled ? 1 : 0.5 }}>
+            <b className="ellip" style={{ flex: 1, minWidth: 120, fontSize: 13 }}>{r.label}</b>
+            <input type="number" step="0.01" title="price" value={r.price || ''} disabled={!priceVaries && i > 0}
+              onChange={(e) => upd(i, { price: e.target.value })} style={{ width: 90 }} />
+            <input type="number" title="quantity" value={r.quantity} disabled={!qtyVaries && i > 0}
+              onChange={(e) => upd(i, { quantity: e.target.value })} style={{ width: 80 }} />
+            <input title="SKU" placeholder="SKU" value={r.sku} onChange={(e) => upd(i, { sku: e.target.value })} style={{ width: 110 }} />
+            {/* on/off = is this combo buyable (visible) on Etsy */}
+            <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12 }} className="muted">
+              <input type="checkbox" checked={r.enabled} onChange={(e) => upd(i, { enabled: e.target.checked })} /> on
+            </label>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save variations'}</button>
+      </div>
+      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+    </div>
   )
 }

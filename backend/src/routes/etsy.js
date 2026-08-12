@@ -548,4 +548,64 @@ router.get('/enums', requireUser, async (_req, res) => {
   }
 })
 
+// ---------- 8. EDIT (E4): variations / inventory ----------
+// Etsy's inventory model: a listing has PRODUCTS (one per variation combo,
+// e.g. "Unisex T-Shirt S / White"), each with OFFERINGS (price, quantity,
+// on/off). price_on_property tells WHICH dimension the price varies by.
+
+// GET /api/etsy/inventory?storeId=...&id=...
+router.get('/inventory', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`)
+    res.json({
+      ok: true,
+      priceOnProperty: r.price_on_property || [],
+      quantityOnProperty: r.quantity_on_property || [],
+      skuOnProperty: r.sku_on_property || [],
+      products: (r.products || []).map((p) => ({
+        // the combo's name, e.g. "Unisex T-Shirt S / White"
+        label: (p.property_values || []).map((v) => (v.values || []).join(', ')).join(' / ') || '—',
+        sku: p.sku || '',
+        // keep the raw property_values so we can echo them back EXACTLY on save
+        propertyValues: (p.property_values || []).map((v) => ({ property_id: v.property_id, property_name: v.property_name, value_ids: v.value_ids, values: v.values })),
+        price: money(p.offerings?.[0]?.price),
+        quantity: p.offerings?.[0]?.quantity ?? 0,
+        enabled: !!p.offerings?.[0]?.is_enabled,
+      })),
+    })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/inventory/update
+// { storeId, id, priceOnProperty[], quantityOnProperty[], skuOnProperty[],
+//   products: [{sku, propertyValues, price, quantity, enabled}] }
+// Etsy's rule: this endpoint REPLACES the whole inventory, so we send back
+// every product (with its original property_values) + the edited numbers.
+router.post('/inventory/update', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, priceOnProperty = [], quantityOnProperty = [], skuOnProperty = [], products = [] } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!products.length) return res.status(400).json({ ok: false, error: 'products khali hain' })
+    const body = {
+      products: products.map((p) => ({
+        sku: p.sku || '',
+        property_values: p.propertyValues || [],
+        offerings: [{ price: Number(p.price), quantity: Number(p.quantity) || 0, is_enabled: !!p.enabled }],
+      })),
+      price_on_property: priceOnProperty,
+      quantity_on_property: quantityOnProperty,
+      sku_on_property: skuOnProperty,
+    }
+    // inventory endpoint speaks JSON (string body -> our helper sets the JSON header)
+    await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`, { method: 'PUT', body: JSON.stringify(body) })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 export default router
