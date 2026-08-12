@@ -64,13 +64,18 @@ function ShopSwitcher({ app, screen, go }) {
     await app.selectStore(id)
     if (screen === 'account') go('etsystore')
   }
+  // "Add shop" = go STRAIGHT to Etsy's grant-access page.
+  // We quietly make a workspace behind the scenes; after "Allow" the
+  // backend saves the connection AND renames the workspace to the real
+  // Etsy shop name — so the new shop just appears in this list.
   const addShop = async () => {
     setOpen(false)
-    const name = prompt('Naye shop/store ka naam:')
-    if (!name || !name.trim()) return
-    const st = await app.addStore(name.trim())
-    await app.selectStore(st.id)
-    go('account')   // Settings — wahan se Connect Etsy
+    try {
+      const st = await app.addStore('New shop')
+      await app.selectStore(st.id)
+      const r = await etsy.connectUrl(st.id)
+      window.location.href = r.url          // -> Etsy permission page
+    } catch (e) { alert('⚠ ' + (e.message || e)) }
   }
 
   return (

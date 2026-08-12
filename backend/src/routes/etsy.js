@@ -178,6 +178,11 @@ router.get('/callback', async (req, res) => {
        on conflict (store_id) do update set etsy_user_id=$3, shop_id=$4, shop_name=$5, access_token=$6, refresh_token=$7, expires_at=$8, scopes=$9, connected_at=now()`,
       [st.storeId, st.userId, etsyUserId, String(shop.shop_id), shop.shop_name || '', tok.access_token, tok.refresh_token, expiresAt, SCOPES]
     )
+    // "Add shop" flow makes a placeholder workspace ("New shop") — give it
+    // the REAL Etsy shop name now, so the sidebar shows the right thing.
+    if (shop.shop_name) {
+      try { await q(`update stores set name=$1 where id=$2 and user_id=$3 and name in ('New shop','Imported store')`, [shop.shop_name, st.storeId, st.userId]) } catch {}
+    }
     back('connected:' + (shop.shop_name || 'shop'))
   } catch (e) { back('error:' + e.message) }
 })
