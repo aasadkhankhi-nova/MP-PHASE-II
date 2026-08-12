@@ -307,6 +307,15 @@ router.post('/publish', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// GET /api/etsy/connections — ALL of this user's store->shop links in one go
+// (feeds the sidebar shop-switcher: which store shows which Etsy shop name).
+router.get('/connections', requireUser, async (req, res) => {
+  try {
+    const rows = await q('select store_id, shop_name from etsy_connections where user_id=$1', [req.user.id])
+    res.json({ ok: true, connections: rows.map((r) => ({ storeId: r.store_id, shopName: r.shop_name })) })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
 // ---------- 5. shop browser (the "Etsy Store" screen — like Vela) ----------
 
 // Turn Etsy's money object {amount:1398, divisor:100, currency_code:'USD'} into "13.98"

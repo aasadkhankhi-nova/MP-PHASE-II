@@ -165,6 +165,7 @@ export const authChangePassword = (password) => api('/api/auth/password', { meth
 //      never touch the browser). One MP store = one Etsy shop. ----
 export const etsy = {
   status: (storeId) => api(`/api/etsy/status?storeId=${storeId}`),                       // connected? which shop?
+  connections: () => api('/api/etsy/connections'),                                       // sab stores ke shop-names (sidebar switcher)
   connectUrl: (storeId) => api(`/api/etsy/connect?storeId=${storeId}`),                  // returns Etsy permission-page URL
   disconnect: (storeId) => api('/api/etsy/disconnect', { method: 'POST', body: JSON.stringify({ storeId }) }),
   shippingProfiles: (storeId) => api(`/api/etsy/shipping-profiles?storeId=${storeId}`),  // for the publish form

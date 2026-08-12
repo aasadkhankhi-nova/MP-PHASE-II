@@ -86,3 +86,17 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .etsy-row:hover { background: var(--accent-soft); }
 .etsy-thumb { width: 56px; height: 56px; border-radius: 8px; background: #f1f3f9; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .etsy-thumb img { width: 100%; height: 100%; object-fit: cover; }
+
+/* ---- Shop switcher (Vela-style, top of the sidebar) ---- */
+.shop-switch-wrap { position: relative; margin: 2px 0 10px; }
+.shop-switch-btn { display: flex; align-items: center; gap: 9px; width: 100%; border: 1px solid var(--line); background: #f6f7fb; border-radius: 10px; padding: 7px 9px; cursor: pointer; text-align: left; }
+.shop-switch-btn:hover { background: var(--accent-soft); }
+.etsy-badge { width: 26px; height: 26px; border-radius: 7px; background: #f1641e; color: #fff; font-weight: 800; font-size: 14px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.etsy-badge.off { background: #e5e8f0; font-size: 13px; }
+.shop-switch-name { flex: 1; min-width: 0; display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-switch-name small { font-weight: 500; font-size: 10px; color: var(--muted); }
+.shop-switch-panel { position: absolute; top: calc(100% + 4px); left: 0; right: 0; background: #fff; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 10px 30px rgba(15,20,35,.14); z-index: 40; padding: 5px; }
+.shop-switch-row { display: flex; align-items: center; gap: 9px; width: 100%; border: 0; background: none; padding: 7px 8px; border-radius: 8px; cursor: pointer; text-align: left; }
+.shop-switch-row:hover { background: var(--accent-soft); }
+.shop-switch-row.add { justify-content: center; font-weight: 700; color: var(--accent); border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 4px; }
+.dot-on { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }

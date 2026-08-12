@@ -8,7 +8,7 @@
  * If no store is selected yet, the user is forced onto the Stores screen.
  */
 import React, { useEffect, useState } from 'react'
-import { health } from './api.js'
+import { health, etsy } from './api.js'
 import { AppStateProvider, useApp } from './store/AppState.jsx'
 import Dashboard from './screens/Dashboard.jsx'
 import Mockups from './screens/Mockups.jsx'
@@ -38,6 +38,75 @@ const NAV = [
   { id: 'generate', icon: '⚙️', label: 'Generate' },
   { id: 'results', icon: '📦', label: 'Results' },
 ]
+
+/**
+ * ShopSwitcher — the Vela-style dropdown at the top of the sidebar.
+ * Shows the CURRENT shop (Etsy logo + shop name when connected, otherwise
+ * the store name). Opening it lists every store/shop; clicking one switches
+ * the WHOLE app to that shop's workspace. "＋ Add shop" makes a new store
+ * and jumps to Settings so its Etsy shop can be connected.
+ */
+function ShopSwitcher({ app, screen, go }) {
+  const [open, setOpen] = useState(false)
+  const [conns, setConns] = useState({})   // storeId -> Etsy shop name
+
+  // which stores are linked to which Etsy shops (one call for all)
+  useEffect(() => {
+    if (!app.authed) return
+    etsy.connections()
+      .then((r) => { const m = {}; for (const c of r.connections) m[c.storeId] = c.shopName; setConns(m) })
+      .catch(() => {})
+  }, [app.authed, app.stores.length, app.curStoreId])
+
+  if (!app.stores.length) return null
+  const cur = app.curStore
+  const curShop = cur ? conns[cur.id] : null
+
+  const pick = async (id) => {
+    setOpen(false)
+    await app.selectStore(id)
+    if (screen === 'account') go('dash')
+  }
+  const addShop = async () => {
+    setOpen(false)
+    const name = prompt('Naye shop/store ka naam:')
+    if (!name || !name.trim()) return
+    const st = await app.addStore(name.trim())
+    await app.selectStore(st.id)
+    go('account')   // Settings — wahan se Connect Etsy
+  }
+
+  return (
+    <div className="shop-switch-wrap">
+      <button className="shop-switch-btn" onClick={() => setOpen(!open)}>
+        <span className={'etsy-badge' + (curShop ? '' : ' off')}>{curShop ? 'E' : '🏬'}</span>
+        <span className="shop-switch-name">
+          <small>{curShop ? 'Etsy' : 'store'}</small>
+          {curShop || (cur ? cur.name : 'store chunein')}
+        </span>
+        <span style={{ opacity: 0.5 }}>▾</span>
+      </button>
+      {open && (
+        <div className="shop-switch-panel">
+          {app.stores.map((s) => {
+            const shop = conns[s.id]
+            return (
+              <button key={s.id} className="shop-switch-row" onClick={() => pick(s.id)}>
+                <span className={'etsy-badge' + (shop ? '' : ' off')}>{shop ? 'E' : '🏬'}</span>
+                <span className="shop-switch-name">
+                  <small>{shop ? 'Etsy' : 'store'}</small>
+                  {shop || s.name}
+                </span>
+                {s.id === app.curStoreId && <span className="dot-on" />}
+              </button>
+            )
+          })}
+          <button className="shop-switch-row add" onClick={addShop}>＋ Add shop</button>
+        </div>
+      )}
+    </div>
+  )
+}
 
 // Shown for screens that are not built yet.
 function Placeholder({ title }) {
@@ -95,24 +164,9 @@ function Shell() {
     <div className="layout">
       <aside className="sidebar">
         <div className="logo">✈ List<span>Pilot</span></div>
-        {/* store switcher — one click to jump between isolated stores */}
-        {app.stores.length > 0 && (
-          <select
-            className="store-switch"
-            value={app.curStoreId || ''}
-            onChange={(e) => {
-              // "＋ New store…" opens Settings, where stores are managed
-              if (e.target.value === '__new') { setScreen('account') }
-              else if (e.target.value) { app.selectStore(e.target.value); if (screen === 'account') setScreen('dash') }
-            }}
-          >
-            {!app.curStoreId && <option value="">— store chunein —</option>}
-            {app.stores.map((s) => (
-              <option key={s.id} value={s.id}>🏬 {s.name}</option>
-            ))}
-            <option value="__new">＋ New store…</option>
-          </select>
-        )}
+        {/* shop switcher (Vela-style): Etsy logo + shop name; the whole app
+            switches to the selected shop's workspace */}
+        <ShopSwitcher app={app} screen={screen} go={setScreen} />
         {NAV.map((n, i) =>
           n.sec ? (
             <div key={i} className="nav-sec">{n.sec}</div>
