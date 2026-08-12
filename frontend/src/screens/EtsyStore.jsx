@@ -212,17 +212,21 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
         <div className="card" style={{ padding: 0, overflow: 'visible' }}>
           {/* ---- table header ---- */}
           <div className="etbl-head">
-            <span className="etbl-selwrap">
+            <span className="etbl-selwrap" onClick={(e) => e.stopPropagation()}>
               {/* header checkbox = current page; the ▾ opens All / Current page / None */}
               <input type="checkbox" checked={pageAllSel} onChange={() => (pageAllSel ? selNone() : selPage())} />
-              <button className="etbl-caret" onClick={() => setSelMenu(!selMenu)}>▾</button>
+              <button className="etbl-caret" title="Select…" onClick={() => setSelMenu(!selMenu)}>▾</button>
               {selMenu && (
-                <div className="etbl-selmenu">
-                  <button onClick={selAll}>All listings ({rows.length})</button>
-                  <button onClick={selPage}>Current page ({pageRows.length})</button>
-                  {/* None sirf tab dabta hai jab kuch selected ho — warna grey */}
-                  <button disabled={sel.size === 0} onClick={selNone}>None</button>
-                </div>
+                <>
+                  {/* invisible veil: click anywhere outside -> menu closes */}
+                  <div className="menu-veil" onClick={() => setSelMenu(false)} />
+                  <div className="etbl-selmenu">
+                    <button onClick={selAll}>☑ All listings ({rows.length})</button>
+                    <button onClick={selPage}>☑ Current page ({pageRows.length})</button>
+                    {/* None sirf tab dabta hai jab kuch selected ho — warna grey */}
+                    <button disabled={sel.size === 0} onClick={selNone}>☐ None{sel.size ? ` (${sel.size} hatengi)` : ''}</button>
+                  </div>
+                </>
               )}
             </span>
             <span></span>

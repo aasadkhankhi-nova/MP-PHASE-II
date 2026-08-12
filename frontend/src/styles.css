@@ -138,8 +138,10 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .etbl-row.sel { background: #f5f7ff; }
 .etbl-row .etsy-thumb { width: 48px; height: 48px; }
 .etbl-selwrap { display: flex; align-items: center; gap: 2px; position: relative; }
-.etbl-caret { border: 0; background: none; cursor: pointer; color: var(--mut); font-size: 11px; padding: 2px; }
-.etbl-selmenu { position: absolute; top: 22px; left: 0; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 26px rgba(15,20,35,.14); z-index: 30; padding: 5px; min-width: 170px; }
+.etbl-caret { border: 1px solid var(--line); background: #fff; border-radius: 6px; cursor: pointer; color: var(--txt); font-size: 12px; padding: 2px 6px; line-height: 1; }
+.etbl-caret:hover { background: var(--accent-soft); border-color: var(--accent); }
+.menu-veil { position: fixed; inset: 0; z-index: 29; }
+.etbl-selmenu { position: absolute; top: 26px; left: 0; z-index: 30; background: #fff; border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 10px 26px rgba(15,20,35,.14); z-index: 30; padding: 5px; min-width: 170px; }
 .etbl-selmenu button { display: block; width: 100%; text-align: left; border: 0; background: none; padding: 7px 10px; border-radius: 7px; cursor: pointer; font-size: 13px; }
 .etbl-selmenu button:hover { background: var(--accent-soft); }
 .etbl-selmenu button:disabled { color: #b9bfcc; cursor: default; background: none; }
