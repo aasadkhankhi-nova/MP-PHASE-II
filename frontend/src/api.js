@@ -180,6 +180,12 @@ export const etsy = {
   enums: () => api('/api/etsy/enums'),   // who_made / when_made ke current options
   inventory: (storeId, id) => api(`/api/etsy/inventory?storeId=${storeId}&id=${id}`),                  // variations (per-combo price/qty)
   saveInventory: (storeId, id, inv) => api('/api/etsy/inventory/update', { method: 'POST', body: JSON.stringify({ storeId, id, ...inv }) }),
+  addImage: (storeId, id, dataUrl, rank) => api('/api/etsy/listing/image', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, rank }) }),
+  delImage: (storeId, id, imageId) => api('/api/etsy/listing/image/delete', { method: 'POST', body: JSON.stringify({ storeId, id, imageId }) }),
+  orderImages: (storeId, id, order) => api('/api/etsy/listing/image/order', { method: 'POST', body: JSON.stringify({ storeId, id, order }) }),
+  addVideo: (storeId, id, dataUrl, name) => api('/api/etsy/listing/video', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, name }) }),
+  delVideo: (storeId, id, videoId) => api('/api/etsy/listing/video/delete', { method: 'POST', body: JSON.stringify({ storeId, id, videoId }) }),
+  setState: (storeId, id, state) => api('/api/etsy/listing/state', { method: 'POST', body: JSON.stringify({ storeId, id, state }) }), // publish / deactivate
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 

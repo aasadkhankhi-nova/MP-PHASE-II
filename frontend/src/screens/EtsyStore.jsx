@@ -108,8 +108,8 @@ export default function EtsyStore() {
               </div>
               {/* all photos, in Etsy's order */}
               <div className="grid">
-                {detail.images.map((u, i) => (
-                  <div key={i} className="card item-card"><div className="thumb"><img src={u} alt={'photo ' + (i + 1)} /></div></div>
+                {detail.images.map((im, i) => (
+                  <div key={im.id || i} className="card item-card"><div className="thumb"><img src={im.url} alt={'photo ' + (i + 1)} /></div></div>
                 ))}
               </div>
             </div>
@@ -355,6 +355,11 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       {/* ---- E4: variations / inventory (its own Save — replace-all on Etsy) ---- */}
       <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency} />
 
+      {/* ---- E5: photos, video, publish ---- */}
+      <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} />
+      <VideoEditor storeId={storeId} listingId={detail.id} initial={detail.video} />
+      <PublishCard storeId={storeId} listingId={detail.id} state={detail.state} onDone={onDone} />
+
       {/* ---- E3: Details — sab dropdowns LIVE Etsy se ---- */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>📋 Details</h3>
@@ -542,6 +547,161 @@ function InventoryEditor({ storeId, listingId, currency }) {
 
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
         <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save variations'}</button>
+      </div>
+      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+    </div>
+  )
+}
+
+/**
+ * PhotosEditor (E5) — manage the listing's photos on Etsy:
+ * upload new (max 10 total), delete, and reorder with ← → arrows
+ * (order is saved with one button so you can arrange first, save once).
+ */
+function PhotosEditor({ storeId, listingId, initial }) {
+  const [imgs, setImgs] = useState(initial)   // [{id, url}]
+  const [dirty, setDirty] = useState(false)   // order changed but not saved yet
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const move = (i, d) => {
+    const j = i + d
+    if (j < 0 || j >= imgs.length) return
+    const a = [...imgs]; const t = a[i]; a[i] = a[j]; a[j] = t
+    setImgs(a); setDirty(true)
+  }
+
+  const saveOrder = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      await etsy.orderImages(storeId, listingId, imgs.map((x) => x.id))
+      setDirty(false); setMsg('✅ Order save ho gaya')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  const del = async (im) => {
+    if (!confirm('Ye photo Etsy listing se delete karni hai?')) return
+    setBusy(true); setMsg(null)
+    try {
+      await etsy.delImage(storeId, listingId, im.id)
+      setImgs(imgs.filter((x) => x.id !== im.id))
+      setMsg('🗑 Photo delete ho gayi')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  const upload = async (files) => {
+    setBusy(true); setMsg(null)
+    try {
+      for (const f of Array.from(files).slice(0, 10 - imgs.length)) {
+        const dataUrl = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
+        const res = await etsy.addImage(storeId, listingId, dataUrl, imgs.length + 1)
+        setImgs((cur) => [...cur, { id: res.imageId, url: dataUrl }])
+      }
+      setMsg('✅ Upload ho gaya')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/10</span></h3>
+      <div className="grid">
+        {imgs.map((im, i) => (
+          <div key={im.id} className="card item-card">
+            <div className="thumb"><img src={im.url} alt="" /></div>
+            <div style={{ display: 'flex', gap: 4, marginTop: 6, justifyContent: 'center' }}>
+              <button className="btn sm ghost" disabled={busy || i === 0} onClick={() => move(i, -1)}>←</button>
+              <span className="chip">{i + 1}</span>
+              <button className="btn sm ghost" disabled={busy || i === imgs.length - 1} onClick={() => move(i, 1)}>→</button>
+              <button className="btn sm danger" disabled={busy} onClick={() => del(im)}>🗑</button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+        {imgs.length < 10 && (
+          <label className="btn ghost" style={{ cursor: 'pointer' }}>
+            ＋ Upload photos
+            <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
+          </label>
+        )}
+        {dirty && <button className="btn" disabled={busy} onClick={saveOrder}>💾 Save order</button>}
+        {busy && <span className="muted">⏳…</span>}
+      </div>
+      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+    </div>
+  )
+}
+
+/** VideoEditor (E5) — the listing's one video: view, replace (MP4), delete. */
+function VideoEditor({ storeId, listingId, initial }) {
+  const [video, setVideo] = useState(initial)  // {id, url, thumb} | null
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const upload = async (f) => {
+    if (!f) return
+    if (f.size > 15 * 1024 * 1024) return setMsg('⚠ Video 15MB se choti rakhein (app ki transport limit)')
+    setBusy(true); setMsg(null)
+    try {
+      const dataUrl = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
+      const res = await etsy.addVideo(storeId, listingId, dataUrl, f.name)
+      setVideo({ id: res.videoId, url: null, thumb: null })
+      setMsg('✅ Video upload ho gayi (Etsy usay process karega — kuch minute)')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  const del = async () => {
+    if (!confirm('Video Etsy listing se delete karni hai?')) return
+    setBusy(true); setMsg(null)
+    try { await etsy.delVideo(storeId, listingId, video.id); setVideo(null); setMsg('🗑 Video delete ho gayi') }
+    catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🎬 Video {video ? <span className="chip ok">hai</span> : <span className="chip">nahi</span>}</h3>
+      {video?.thumb && <img src={video.thumb} alt="video" style={{ maxWidth: 200, borderRadius: 8, marginBottom: 8 }} />}
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+        <label className="btn ghost" style={{ cursor: 'pointer' }}>
+          {video ? '↻ Replace video' : '＋ Upload video'} (MP4)
+          <input type="file" accept="video/mp4,video/quicktime" style={{ display: 'none' }} onChange={(e) => { upload(e.target.files[0]); e.target.value = '' }} />
+        </label>
+        {video && <button className="btn danger" disabled={busy} onClick={del}>🗑 Delete</button>}
+        {busy && <span className="muted">⏳ upload ho rahi hai…</span>}
+      </div>
+      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+    </div>
+  )
+}
+
+/**
+ * PublishCard (E5) — the big moment: draft/inactive -> ACTIVE (live on Etsy),
+ * or active -> inactive (hide it). Publishing a new listing is when Etsy
+ * charges its own $0.20 listing fee, so we always confirm first.
+ */
+function PublishCard({ storeId, listingId, state, onDone }) {
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  const go = async (target) => {
+    const warn = target === 'active'
+      ? 'Listing LIVE ho jayegi — Etsy apni $0.20 listing fee lega (nayi listing par). Publish karein?'
+      : 'Listing chhup jayegi (inactive) — buyers ko nazar nahi aayegi. Jari rakhein?'
+    if (!confirm(warn)) return
+    setBusy(true); setMsg(null)
+    try {
+      await etsy.setState(storeId, listingId, target)
+      setMsg(target === 'active' ? '🚀 Listing LIVE ho gayi!' : '⏸ Listing inactive ho gayi')
+      setTimeout(onDone, 900)
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
+
+  return (
+    <div className="card">
+      <h3 style={{ marginTop: 0 }}>🚀 Publish <span className="chip">{state}</span></h3>
+      <div style={{ display: 'flex', gap: 8 }}>
+        {state !== 'active' && <button className="btn" disabled={busy} onClick={() => go('active')}>🚀 Publish on Etsy (live)</button>}
+        {state === 'active' && <button className="btn ghost" disabled={busy} onClick={() => go('inactive')}>⏸ Deactivate</button>}
       </div>
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>

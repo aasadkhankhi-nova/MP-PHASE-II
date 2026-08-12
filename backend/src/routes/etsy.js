@@ -369,7 +369,7 @@ router.get('/listing', requireUser, async (req, res) => {
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
-    const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
+    const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images,Videos`)
     // current attribute values (Sleeve length: Short sleeve, ...) — best-effort
     let props = []
     try {
@@ -391,7 +391,8 @@ router.get('/listing', requireUser, async (req, res) => {
         price: money(l.price),
         currency: l.price?.currency_code || 'USD',
         url: l.url,
-        images: (l.images || []).map((im) => im.url_570xN || im.url_fullxfull).filter(Boolean),
+        images: (l.images || []).map((im) => ({ id: im.listing_image_id, url: im.url_570xN || im.url_fullxfull })).filter((x) => x.url),
+        video: l.videos?.[0] ? { id: l.videos[0].video_id, url: l.videos[0].video_url, thumb: l.videos[0].thumbnail_url } : null,
         personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '' },
         section_id: l.shop_section_id || null,
         autoRenew: !!l.should_auto_renew,
@@ -605,6 +606,108 @@ router.post('/inventory/update', requireUser, async (req, res) => {
     // inventory endpoint speaks JSON (string body -> our helper sets the JSON header)
     await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`, { method: 'PUT', body: JSON.stringify(body) })
     res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// ---------- 9. EDIT (E5): photos, video, publish ----------
+
+// helper: turn a dataUrl into {bytes, mime}
+function fromDataUrl(dataUrl) {
+  const [head, b64] = String(dataUrl).split(',')
+  const mime = (head.match(/data:([^;]+)/) || [])[1] || 'application/octet-stream'
+  return { bytes: Buffer.from(b64, 'base64'), mime }
+}
+
+// POST /api/etsy/listing/image { storeId, id, dataUrl, rank }
+// Upload ONE new photo to the listing (max 10 photos per Etsy listing).
+router.post('/listing/image', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, dataUrl, rank } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const { bytes, mime } = fromDataUrl(dataUrl)
+    const fd = new FormData()
+    fd.append('image', new Blob([bytes], { type: mime }), `photo.${mime.includes('png') ? 'png' : 'jpg'}`)
+    if (rank) fd.append('rank', String(rank))
+    const r = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images`, { method: 'POST', body: fd })
+    res.json({ ok: true, imageId: r.listing_image_id })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/image/delete { storeId, id, imageId }
+router.post('/listing/image/delete', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, imageId } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, { method: 'DELETE' })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/image/order { storeId, id, order: [imageId...] }
+// Re-rank existing photos: Etsy's way is re-POSTing each image id with its new rank.
+router.post('/listing/image/order', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, order = [] } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    for (let i = 0; i < order.length; i++) {
+      const fd = new FormData()
+      fd.append('listing_image_id', String(order[i]))
+      fd.append('rank', String(i + 1))
+      await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images`, { method: 'POST', body: fd })
+    }
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/video { storeId, id, dataUrl, name }
+// Upload/replace the listing's video (Etsy: 1 video, max 100MB; our JSON
+// transport comfortably carries ~15MB — the app's slideshow videos are ~5MB).
+router.post('/listing/video', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, dataUrl, name = 'listing-video.mp4' } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const { bytes, mime } = fromDataUrl(dataUrl)
+    const fd = new FormData()
+    fd.append('video', new Blob([bytes], { type: mime || 'video/mp4' }), name)
+    fd.append('name', name)
+    const r = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/videos`, { method: 'POST', body: fd })
+    res.json({ ok: true, videoId: r.video_id })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/video/delete { storeId, id, videoId }
+router.post('/listing/video/delete', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, videoId } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/state { storeId, id, state: 'active' | 'inactive' }
+// PUBLISH (draft/inactive -> active) or deactivate. Publishing a brand-new
+// draft is when Etsy charges its own $0.20 listing fee — the frontend
+// always shows a confirm dialog before calling this.
+router.post('/listing/state', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, state } = req.body
+    if (!['active', 'inactive'].includes(state)) return res.status(400).json({ ok: false, error: 'state sirf active/inactive ho sakti hai' })
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form({ state }) })
+    res.json({ ok: true, state: l.state })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
