@@ -36,7 +36,15 @@ const REDIRECT = process.env.ETSY_REDIRECT || `${BACKEND_URL}/api/etsy/callback`
 // have to re-connect when we add features (orders, reviews, digital files).
 const SCOPES = 'listings_r listings_w listings_d shops_r shops_w transactions_r feedback_r email_r'
 
-const key = () => process.env.ETSY_API_KEY || ''
+// Etsy credentials. Etsy's v3 API requires the x-api-key HEADER to be
+// "keystring:shared_secret" (both, colon-separated), while the OAuth
+// client_id is the keystring ALONE. We support either setup:
+//   ETSY_API_KEY = keystring  +  ETSY_SHARED_SECRET = secret   (preferred)
+//   ETSY_API_KEY = "keystring:secret"                          (also works)
+const rawKey = () => process.env.ETSY_API_KEY || ''
+const key = () => rawKey().split(':')[0]                         // keystring only (OAuth client_id)
+const secret = () => process.env.ETSY_SHARED_SECRET || rawKey().split(':')[1] || ''
+const apiKeyHdr = () => (secret() ? `${key()}:${secret()}` : key())  // full x-api-key header value
 
 // ---------- tiny helpers ----------
 
@@ -71,7 +79,7 @@ async function getConn(storeId) {
   if (new Date(c.expires_at).getTime() - Date.now() < 60 * 1000) {
     const r = await fetch('https://api.etsy.com/v3/public/oauth/token', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKeyHdr() },
       body: JSON.stringify({ grant_type: 'refresh_token', client_id: key(), refresh_token: c.refresh_token }),
     })
     const j = await r.json()
@@ -89,7 +97,7 @@ async function etsy(conn, path, opts = {}) {
   const res = await fetch('https://api.etsy.com/v3/application' + path, {
     ...opts,
     headers: {
-      'x-api-key': key(),
+      'x-api-key': apiKeyHdr(),
       authorization: `Bearer ${conn.access_token}`,
       ...(opts.body && !(opts.body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
       ...(opts.headers || {}),
@@ -136,7 +144,7 @@ router.get('/callback', async (req, res) => {
     // code -> tokens
     const tr = await fetch('https://api.etsy.com/v3/public/oauth/token', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', 'x-api-key': apiKeyHdr() },
       body: JSON.stringify({ grant_type: 'authorization_code', client_id: key(), redirect_uri: REDIRECT, code, code_verifier: st.verifier }),
     })
     const tok = await tr.json()
@@ -207,7 +215,7 @@ let TAXO = { at: 0, flat: [] }
 router.get('/taxonomy', requireUser, async (req, res) => {
   try {
     if (Date.now() - TAXO.at > 24 * 3600 * 1000 || !TAXO.flat.length) {
-      const r = await fetch('https://api.etsy.com/v3/application/seller-taxonomy/nodes', { headers: { 'x-api-key': key() } })
+      const r = await fetch('https://api.etsy.com/v3/application/seller-taxonomy/nodes', { headers: { 'x-api-key': apiKeyHdr() } })
       const j = await r.json()
       if (!r.ok) throw new Error(j.error || 'taxonomy fetch failed')
       // flatten the tree into "Parent > Child > Leaf" labels
