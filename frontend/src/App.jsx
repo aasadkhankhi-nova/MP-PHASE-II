@@ -51,7 +51,23 @@ function ShopSwitcher({ app, screen, go }) {
   useEffect(() => {
     if (!app.authed) return
     etsy.connections()
-      .then((r) => { const m = {}; for (const c of r.connections) m[c.storeId] = c.shopName; setConns(m) })
+      .then(async (r) => {
+        const m = {}
+        for (const c of r.connections) m[c.storeId] = c.shopName
+        setConns(m)
+        // CLEANUP: "Add shop" makes a placeholder workspace before sending
+        // the user to Etsy. If they backed out without granting access,
+        // that empty "New shop" would linger — remove it automatically.
+        const orphans = app.stores.filter((s) => s.name === 'New shop' && !m[s.id])
+        if (orphans.length) {
+          const wasCurrent = orphans.some((o) => o.id === app.curStoreId)
+          for (const o of orphans) { try { await app.deleteStore(o.id) } catch {} }
+          if (wasCurrent) {
+            const left = app.stores.filter((s) => !orphans.find((o) => o.id === s.id))
+            if (left[0]) { try { await app.selectStore(left[0].id) } catch {} }
+          }
+        }
+      })
       .catch(() => {})
   }, [app.authed, app.stores.length, app.curStoreId])
 
