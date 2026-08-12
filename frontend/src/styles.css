@@ -113,3 +113,13 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .frow-count { font-size: 12px; color: var(--muted); flex-shrink: 0; }
 .frow.active .frow-count { color: rgba(255,255,255,0.85); }
 @media (max-width: 900px) { .etsy-layout { flex-direction: column; } .etsy-filters { width: 100%; position: static; max-height: none; } }
+
+/* ---- Icon rail (far-left, Vela-style): icons only, names on hover ---- */
+.rail { width: 54px; flex-shrink: 0; background: #fff; border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding: 10px 0 12px; gap: 6px; height: 100vh; position: sticky; top: 0; }
+.rail-logo { width: 38px; height: 38px; border-radius: 11px; border: 0; background: var(--accent); color: #fff; font-size: 18px; cursor: pointer; margin-bottom: 10px; }
+.rail-btn { width: 38px; height: 38px; border-radius: 11px; border: 0; background: none; font-size: 17px; cursor: pointer; color: var(--txt); display: flex; align-items: center; justify-content: center; }
+.rail-btn:hover { background: var(--accent-soft); }
+.rail-btn.active { background: var(--accent-soft); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.rail-spacer { flex: 1; }
+.rail-avatar { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--accent); color: #fff; font-size: 12px; font-weight: 700; cursor: pointer; }
+.rail-avatar.active { box-shadow: 0 0 0 2.5px var(--accent-soft), 0 0 0 4px var(--accent); }

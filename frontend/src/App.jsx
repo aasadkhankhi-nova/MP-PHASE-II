@@ -27,6 +27,8 @@ const TITLES = {
   designs: { icon: '🎨', label: 'Designs' },
   listings: { icon: '🚀', label: 'Launchpad' },
   account: { icon: '⚙️', label: 'Settings' },
+  help: { icon: 'ℹ️', label: 'Help center' },
+  support: { icon: '💬', label: 'Support' },
 }
 const ES_STATES = [
   { id: 'active', label: 'Active' },
@@ -139,6 +141,7 @@ function Placeholder({ title }) {
 function Shell() {
   const app = useApp()
   const [screen, setScreen] = useState('etsystore')     // Etsy Store is home now
+  const [rail, setRail] = useState('listings')          // icon rail: which PANEL shows (listings | profiles)
   const [api, setApi] = useState({ state: 'checking' }) // backend health chip
 
   // ---- Etsy data lives HERE (shared by the sidebar menu + the screen) ----
@@ -227,12 +230,47 @@ function Shell() {
 
   return (
     <div className="layout">
+      {/* ==================== ICON RAIL (far left, Vela-style) ====================
+          Icons only; the name appears on hover (native tooltip). */}
+      <nav className="rail">
+        {/* logo = HOME: selected shop's Active listings */}
+        <button className="rail-logo" title="ListPilot — Active listings"
+          onClick={() => { setRail('listings'); pickState('active') }}>✈</button>
+
+        <button className={'rail-btn' + (rail === 'listings' ? ' active' : '')} title="Listings"
+          onClick={() => { setRail('listings'); setScreen('etsystore') }}>☰</button>
+        <button className={'rail-btn' + (rail === 'profiles' ? ' active' : '')} title="Profiles"
+          onClick={() => setRail('profiles')}>🧩</button>
+
+        <div className="rail-spacer" />
+
+        <button className={'rail-btn' + (eff === 'help' ? ' active' : '')} title="Help center"
+          onClick={() => setScreen('help')}>ℹ️</button>
+        <button className={'rail-btn' + (eff === 'support' ? ' active' : '')} title="Support"
+          onClick={() => setScreen('support')}>💬</button>
+        {app.authed && (
+          <button className={'rail-avatar' + (eff === 'account' ? ' active' : '')}
+            title={(app.session.user.name || app.session.user.email || 'Account') + ' — Settings'}
+            onClick={() => setScreen('account')}>
+            {(app.session.user.name || app.session.user.email || '?').slice(0, 2).toUpperCase()}
+          </button>
+        )}
+      </nav>
+
+      {/* ==================== PANEL (second sidebar) ==================== */}
       <aside className="sidebar">
-        <div className="logo">✈ List<span>Pilot</span></div>
-        {/* shop switcher: Etsy logo + shop name; switches the whole app */}
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
-        {/* ==================== THE MENU (Vela-style) ==================== */}
+        {rail === 'profiles' ? (
+          /* Profiles panel — the working comes next (aap batayenge kya karna hai) */
+          <div className="side-scroll">
+            <div className="nav-sec">Profiles</div>
+            <p className="muted" style={{ padding: '4px 10px' }}>
+              🧩 Profiles ka system agla kaam hai — listing templates (price, shipping,
+              variations, details ek bar save kar ke har nayi listing par lagana).
+            </p>
+          </div>
+        ) : (
         <div className="side-scroll">
           {/* Status — Etsy listings by state */}
           <div className="nav-sec">Status</div>
@@ -308,25 +346,16 @@ function Shell() {
             </button>
           </>}
         </div>
+        )}
 
-        {/* ---- pinned to the BOTTOM ---- */}
-        <div className="side-bottom">
-          {api.state === 'down' && (
+        {/* server warning (only when the free server is waking up) */}
+        {api.state === 'down' && (
+          <div className="side-bottom">
             <span className="chip err">⚠ server jag raha hai… thori dair me refresh karein</span>
-          )}
-          {app.authed && (
-            <button
-              className={'side-user' + (eff === 'account' ? ' active' : '')}
-              onClick={() => setScreen('account')}
-              title="Account settings"
-            >
-              <span className="avatar">{(app.session.user.name || app.session.user.email || '?').slice(0, 2).toUpperCase()}</span>
-              <span className="side-user-name">{app.session.user.name || (app.session.user.email || '').split('@')[0]}</span>
-              <span className="side-user-gear">⚙</span>
-            </button>
-          )}
-        </div>
+          </div>
+        )}
       </aside>
+
       <main className="main">
         <div className="topbar">
           <h1>{current ? `${current.icon} ${current.label}` : ''}</h1>
