@@ -1,35 +1,67 @@
 /**
- * Account.jsx — the SETTINGS page (opens from the user chip at the
- * bottom of the sidebar). Everything "behind the scenes" lives here:
- *   - user info, cloud-sync status, Sync now, Logout
- *   - STORES: create / rename / delete (switching is the sidebar dropdown)
- *   - Change password
- *   - API key (Gemini, for the SEO part of Create listing)
- *   - Backend URL (hidden developer setting)
- * (Login/signup itself happens on the Login screen — the app gate.)
+ * Account.jsx — "Account settings" (opens from the avatar in the icon rail).
+ * Vela-style layout:
+ *   - Contact information: avatar + first/last name
+ *   - Email: current email; change with new email + password check
+ *   - Password: current + new + confirm
+ *   - one Save button for whatever changed; Log out on top-right
+ * Below that: Import (Phase I data) and the AI API-key card
+ * (provider dropdown first — like MP Phase I — then the key box).
  */
 import React, { useState, useEffect } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import Stores from './Stores.jsx'
-import { authLogin, authSignup, authChangePassword, getApiBase, setApiBase, health, getGeminiKey, setGeminiKey, etsy } from '../api.js'
+import {
+  getSession, setSession,
+  authUpdateProfile, authChangeEmail, authChangePassword,
+  getAI, setAI, AI_PROVIDERS,
+  getApiBase, setApiBase, health, etsy,
+} from '../api.js'
 
 export default function Account() {
   const app = useApp()
-  const [email, setEmail] = useState('')
-  const [pass, setPass] = useState('')
-  const [msg, setMsg] = useState(null)
+  const u = app.session?.user || {}
+  // split the saved full name into first/last for the two boxes
+  const [first, setFirst] = useState(() => (u.name || '').split(' ')[0] || '')
+  const [last, setLast] = useState(() => (u.name || '').split(' ').slice(1).join(' ') || '')
+  const [newEmail, setNewEmail] = useState('')
+  const [emailPw, setEmailPw] = useState('')
+  const [curPw, setCurPw] = useState('')
+  const [p1, setP1] = useState('')
+  const [p2, setP2] = useState('')
   const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
   const [apiUrl, setApiUrl] = useState(getApiBase())
 
-  // Fallback login form (normally the Login gate handles this).
-  const doLogin = async (signup) => {
-    setMsg(null); setBusy(true)
+  // ONE Save for all three sections — only the changed ones are sent.
+  const save = async () => {
+    setBusy(true); setMsg(null)
     try {
-      if (!email.trim() || pass.length < 6) throw new Error('Email aur kam az kam 6-harfi password likhein')
-      const sess = signup ? await authSignup(email.trim(), pass) : await authLogin(email.trim(), pass)
-      if (!sess) { setMsg('✉️ Email par confirmation link gaya hai — confirm kar ke phir Login dabayein.'); return }
-      await app.loginDone(sess)
-      setMsg('✅ Login ho gaya — cloud sync ON')
+      const done = []
+      const newName = `${first.trim()} ${last.trim()}`.trim()
+      if (newName && newName !== (u.name || '')) {
+        await authUpdateProfile(first.trim(), last.trim())
+        const sess = getSession()
+        if (sess) { sess.user.name = newName; setSession(sess) }
+        done.push('naam update ho gaya')
+      }
+      if (newEmail.trim()) {
+        if (!emailPw) throw new Error('Email badalne ke liye password likhein')
+        await authChangeEmail(newEmail.trim(), emailPw, u.email)
+        done.push('email — confirmation link dono inbox me bheja gaya hai')
+      }
+      if (curPw || p1 || p2) {
+        if (p1.length < 6) throw new Error('Naya password kam az kam 6 harf ka ho')
+        if (p1 !== p2) throw new Error('Naye passwords match nahi karte')
+        if (!curPw) throw new Error('Current password likhein')
+        await authChangePassword(p1, curPw, u.email)
+        done.push('password update ho gaya')
+      }
+      if (!done.length) { setMsg('Kuch badla hi nahi 🙂'); return }
+      setMsg('✅ ' + done.join(' · '))
+      setNewEmail(''); setEmailPw(''); setCurPw(''); setP1(''); setP2('')
+      // sidebar avatar/name refresh ke liye halka sa reload
+      if (done[0].startsWith('naam')) setTimeout(() => location.reload(), 900)
     } catch (e) {
       setMsg('⚠ ' + (e.message || e))
     } finally { setBusy(false) }
@@ -43,54 +75,66 @@ export default function Account() {
 
   return (
     <>
-      {app.authed ? (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>👤 {app.session.user.name || app.session.user.email}</h3>
-          {app.session.user.name && <p className="muted" style={{ marginTop: -6 }}>{app.session.user.email}</p>}
-          {/* live sync status — mirrors the ☁ chip in the top bar */}
-          <p className="muted">
-            Cloud sync: <b>{app.sync.state === 'ok' ? 'sab save hai ✅' : app.sync.state === 'pending' ? 'save ho raha…' : app.sync.state === 'pulling' ? 'load ho raha…' : app.sync.state === 'error' ? '⚠ error: ' + (app.sync.err || '') : 'idle'}</b>
-            {app.sync.at ? ` · last: ${new Date(app.sync.at).toLocaleTimeString()}` : ''}
-          </p>
-          <p className="muted">Stores, mockups, designs aur listings cloud (Supabase) me save hote hain — kisi bhi device se login karein, sab wahin milega. (Generated photos sirf isi browser me rehti hain.)</p>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn ghost" onClick={() => app.syncNow()}>↻ Sync now</button>
-            <button className="btn danger" onClick={() => app.logout()}>Logout</button>
-          </div>
+      {/* ---- Contact information + Log out (Vela-style header) ---- */}
+      <div className="card">
+        <div className="topbar" style={{ margin: '0 0 12px' }}>
+          <h3 style={{ margin: 0 }}>Contact information</h3>
+          <button className="btn ghost" onClick={() => app.logout()}>⇦ Log out</button>
         </div>
-      ) : (
-        <div className="card" style={{ maxWidth: 460 }}>
-          <h3 style={{ marginTop: 0 }}>👤 Login / Create account</h3>
-          <input placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: '100%', marginBottom: 8 }} />
-          <input placeholder="Password (min 6)" type="password" value={pass} onChange={(e) => setPass(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn" disabled={busy} onClick={() => doLogin(false)}>Login</button>
-            <button className="btn ghost" disabled={busy} onClick={() => doLogin(true)}>Create account</button>
-          </div>
+        <div className="avatar" style={{ width: 64, height: 64, fontSize: 20, marginBottom: 14 }}>
+          {(u.name || u.email || '?').slice(0, 2).toUpperCase()}
         </div>
-      )}
-      {msg && <div className="card"><p className="muted" style={{ margin: 0 }}>{msg}</p></div>}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>First name</label>
+            <input value={first} onChange={(e) => setFirst(e.target.value)} style={{ minWidth: 180 }} />
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Last name</label>
+            <input value={last} onChange={(e) => setLast(e.target.value)} style={{ minWidth: 180 }} />
+          </span>
+        </div>
+      </div>
 
-      {/* ---- STORES management (create / rename / delete) lives in Settings.
-           Day-to-day store SWITCHING is the dropdown at the top of the sidebar. ---- */}
-      {app.authed && <Stores />}
+      {/* ---- Email ---- */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Email</h3>
+        <p className="muted" style={{ marginBottom: 2 }}>Current Email</p>
+        <p style={{ margin: '0 0 12px', fontWeight: 600 }}>{u.email}</p>
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>New Email</label>
+        <input placeholder="Enter new email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} style={{ minWidth: 260, marginBottom: 10 }} /><br />
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>Password</label>
+        <input placeholder="Enter password" type="password" value={emailPw} onChange={(e) => setEmailPw(e.target.value)} style={{ minWidth: 260 }} />
+      </div>
 
-      {/* ---- Etsy connection for the CURRENT store ---- */}
-      {app.authed && app.curStoreId && <EtsyConnect storeId={app.curStoreId} storeName={app.curStore?.name} />}
+      {/* ---- Password ---- */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Password</h3>
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>Current password</label>
+        <input placeholder="Enter current password" type="password" value={curPw} onChange={(e) => setCurPw(e.target.value)} style={{ minWidth: 260, marginBottom: 10 }} /><br />
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>New password</label>
+        <input placeholder="Enter new password" type="password" value={p1} onChange={(e) => setP1(e.target.value)} style={{ minWidth: 260, marginBottom: 10 }} /><br />
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>Confirm new password</label>
+        <input placeholder="Confirm new password" type="password" value={p2} onChange={(e) => setP2(e.target.value)} style={{ minWidth: 260 }} />
+      </div>
 
-      {/* ---- import old MP Phase I data (backup/project files) ---- */}
-      {app.authed && <ImportCard />}
+      {/* ---- Save (bottom, Vela-style) ---- */}
+      <div className="card" style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 12 }}>
+        {msg && <span className="muted">{msg}</span>}
+        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : 'Save'}</button>
+      </div>
 
-      {/* ---- security: change password (only when logged in) ---- */}
-      {app.authed && <ChangePassword />}
+      {/* ---- Import (purani Phase I app se) ---- */}
+      <ImportCard />
 
-      {/* ---- user's own AI key for the SEO feature ---- */}
-      {app.authed && <ApiKeys />}
+      {/* ---- AI API key (provider dropdown pehle — Phase I style) ---- */}
+      <AICard />
 
-      {/* ---- Backend URL: DEVELOPER-ONLY setting, hidden from normal users.
-           The correct address is built into the app, so nobody needs this.
-           To reveal it (e.g. if the backend ever moves), open the browser
-           console and run:  localStorage.setItem('mp_dev','1')  then refresh. ---- */}
+      {/* ---- stores manage (rename/delete) + Etsy connection ---- */}
+      <Stores />
+      {app.curStoreId && <EtsyConnect storeId={app.curStoreId} storeName={app.curStore?.name} />}
+
+      {/* ---- developer-only backend URL (console: localStorage.setItem('mp_dev','1')) ---- */}
       {localStorage.getItem('mp_dev') === '1' && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>⚙ Backend (developer)</h3>
@@ -105,69 +149,46 @@ export default function Account() {
 }
 
 /**
- * API-keys card. Each user pastes their OWN Google Gemini key here
- * (free from https://aistudio.google.com/apikey). The key is saved only
- * in this browser's localStorage — our server and database never store it;
- * it just travels along with each SEO request.
+ * AICard — SEO ke liye AI ki key. PEHLE provider ka dropdown (jaise MP
+ * Phase I me tha), phir us provider ki key ka box, phir Save.
+ * Har provider ki key alag yaad rehti hai; jo provider chuna hua hai
+ * usi se SEO chalta hai. Keys sirf IS browser me rehti hain.
  */
-function ApiKeys() {
-  const [key, setKey] = useState(getGeminiKey())
+function AICard() {
+  const [ai, setAiState] = useState(() => {
+    const a = getAI()
+    return { prov: a.prov || 'gemini', keys: { gemini: '', groq: '', openrouter: '', ...(a.keys || {}) } }
+  })
   const [kMsg, setKMsg] = useState(null)
+  const prov = AI_PROVIDERS.find((p) => p.id === ai.prov) || AI_PROVIDERS[0]
 
   const save = () => {
-    setGeminiKey(key)
-    setKMsg(key.trim() ? '✅ Key save ho gayi (sirf is browser me)' : '🗑 Key hata di gayi')
+    setAI(ai)
+    setKMsg(ai.keys[ai.prov] ? `✅ ${prov.label} save ho gaya (sirf is browser me)` : '🗑 Key khali hai — SEO band rahega')
   }
 
   return (
     <div className="card" style={{ maxWidth: 560 }}>
       <h3 style={{ marginTop: 0 }}>🔑 API key (SEO ke liye)</h3>
-      <p className="muted">
-        SEO feature aap ki apni (free) Google Gemini key se chalta hai.
-        Key yahan se banayein: <a className="lnk" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">aistudio.google.com/apikey</a>
-        {' '}— phir neeche paste karein. Ye key sirf aap ke browser me save hoti hai, hamare server par store nahi hoti.
-      </p>
+      {/* line 1: provider dropdown */}
+      <select value={ai.prov} onChange={(e) => { setAiState({ ...ai, prov: e.target.value }); setKMsg(null) }} style={{ width: '100%', marginBottom: 10 }}>
+        {AI_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+      </select>
+      {/* line 2: key box + save */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-        <input placeholder="Gemini API key (AIza…)" type="password" value={key} onChange={(e) => setKey(e.target.value)} style={{ flex: 1, minWidth: 260 }} />
+        <input
+          placeholder="Enter your API key"
+          type="password"
+          value={ai.keys[ai.prov] || ''}
+          onChange={(e) => setAiState({ ...ai, keys: { ...ai.keys, [ai.prov]: e.target.value.trim() } })}
+          style={{ flex: 1, minWidth: 240 }}
+        />
         <button className="btn" onClick={save}>Save</button>
       </div>
-      {kMsg && <p className="muted" style={{ marginTop: 8 }}>{kMsg}</p>}
-    </div>
-  )
-}
-
-/**
- * Change-password card. Asks for the new password twice (to catch typos),
- * then calls the backend which updates it in Supabase Auth.
- * Note for Google users: setting a password here ALSO lets them sign in
- * with email+password later — both methods then work on the same account.
- */
-function ChangePassword() {
-  const [p1, setP1] = useState('')
-  const [p2, setP2] = useState('')
-  const [pMsg, setPMsg] = useState(null)
-  const [pBusy, setPBusy] = useState(false)
-
-  const change = async () => {
-    setPMsg(null); setPBusy(true)
-    try {
-      if (p1.length < 6) throw new Error('Password kam az kam 6 harf ka ho')
-      if (p1 !== p2) throw new Error('Dono passwords match nahi karte')
-      await authChangePassword(p1)
-      setP1(''); setP2('')
-      setPMsg('✅ Password change ho gaya')
-    } catch (e) {
-      setPMsg('⚠ ' + (e.message || e))
-    } finally { setPBusy(false) }
-  }
-
-  return (
-    <div className="card" style={{ maxWidth: 460 }}>
-      <h3 style={{ marginTop: 0 }}>🔒 Change password</h3>
-      <input placeholder="Naya password (min 6)" type="password" value={p1} onChange={(e) => setP1(e.target.value)} style={{ width: '100%', marginBottom: 8 }} />
-      <input placeholder="Naya password dobara" type="password" value={p2} onChange={(e) => setP2(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && change()} style={{ width: '100%', marginBottom: 10 }} />
-      <button className="btn" disabled={pBusy} onClick={change}>{pBusy ? '⏳ …' : 'Change password'}</button>
-      {pMsg && <p className="muted" style={{ marginTop: 10 }}>{pMsg}</p>}
+      <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
+        Free key yahan se: <a className="lnk" href={'https://' + prov.help} target="_blank" rel="noreferrer">{prov.help}</a> · key sirf aap ke browser me rehti hai.
+      </p>
+      {kMsg && <p className="muted" style={{ marginTop: 6 }}>{kMsg}</p>}
     </div>
   )
 }

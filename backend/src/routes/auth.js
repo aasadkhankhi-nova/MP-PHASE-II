@@ -72,10 +72,15 @@ router.post('/resend', async (req, res) => {
 // Bearer token to Supabase, so each user can only change their own password.
 router.put('/password', async (req, res) => {
   try {
-    const { password } = req.body
+    const { password, currentPassword, currentEmail } = req.body
     if (!password || password.length < 6) return res.status(400).json({ ok: false, error: 'password kam az kam 6 harf ka ho' })
     const authz = req.headers.authorization || ''
     if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
+    // extra safety: if the current password was given, verify it first
+    if (currentPassword && currentEmail) {
+      const chk = await fetch(gotrue('/token?grant_type=password'), { method: 'POST', headers: headers(), body: JSON.stringify({ email: currentEmail, password: currentPassword }) })
+      if (!chk.ok) return res.status(401).json({ ok: false, error: 'Current password ghalat hai' })
+    }
     const r = await fetch(gotrue('/user'), {
       method: 'PUT',
       headers: { ...headers(), authorization: authz },
@@ -83,6 +88,44 @@ router.put('/password', async (req, res) => {
     })
     const j = await r.json()
     if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.error_description || j.message || 'password change failed' })
+    res.json({ ok: true })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// PUT /api/auth/profile { firstName, lastName }
+// Updates the display name stored on the account (user_metadata).
+router.put('/profile', async (req, res) => {
+  try {
+    const { firstName = '', lastName = '' } = req.body
+    const authz = req.headers.authorization || ''
+    if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
+    const full = `${String(firstName).trim()} ${String(lastName).trim()}`.trim()
+    const r = await fetch(gotrue('/user'), {
+      method: 'PUT',
+      headers: { ...headers(), authorization: authz },
+      body: JSON.stringify({ data: { first_name: firstName, last_name: lastName, full_name: full } }),
+    })
+    const j = await r.json()
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.message || 'profile update failed' })
+    res.json({ ok: true, name: full })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// PUT /api/auth/email { email, password, currentEmail }
+// Changes the login email. We first CHECK the password (so nobody with a
+// stolen open session can silently steal the account), then ask Supabase —
+// which emails a confirmation link to finish the change.
+router.put('/email', async (req, res) => {
+  try {
+    const { email, password, currentEmail } = req.body
+    const authz = req.headers.authorization || ''
+    if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
+    if (!email || !password || !currentEmail) return res.status(400).json({ ok: false, error: 'nayi email aur password dono chahiye' })
+    const chk = await fetch(gotrue('/token?grant_type=password'), { method: 'POST', headers: headers(), body: JSON.stringify({ email: currentEmail, password }) })
+    if (!chk.ok) return res.status(401).json({ ok: false, error: 'Password ghalat hai' })
+    const r = await fetch(gotrue('/user'), { method: 'PUT', headers: { ...headers(), authorization: authz }, body: JSON.stringify({ email }) })
+    const j = await r.json()
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.message || 'email change failed' })
     res.json({ ok: true })
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })

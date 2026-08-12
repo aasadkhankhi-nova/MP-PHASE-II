@@ -39,10 +39,29 @@ async function gemCall(body, userKey) {
   throw last
 }
 
-// POST /api/seo/generate { images: [base64...], category, keywords, apiKey }
+// OpenAI-compatible call (Groq / OpenRouter speak the same protocol).
+// Vision: images travel as data-URLs inside the chat message.
+async function oaiCall(provider, key, sys, userText, images) {
+  const base = provider === 'groq' ? 'https://api.groq.com/openai/v1' : 'https://openrouter.ai/api/v1'
+  const model = provider === 'groq' ? 'qwen/qwen3.6-27b' : 'google/gemma-4-31b-it:free'
+  const content = [
+    { type: 'text', text: userText },
+    ...images.map((b) => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b } })),
+  ]
+  const res = await fetch(base + '/chat/completions', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
+    body: JSON.stringify({ model, max_tokens: 2048, messages: [{ role: 'system', content: sys }, { role: 'user', content }] }),
+  })
+  const j = await res.json().catch(() => ({}))
+  if (!res.ok) throw Object.assign(new Error(j.error?.message || `HTTP ${res.status}`), { status: res.status })
+  return j.choices?.[0]?.message?.content || ''
+}
+
+// POST /api/seo/generate { images: [base64...], category, keywords, apiKey, provider }
 router.post('/generate', async (req, res) => {
   try {
-    const { images = [], category = 'Canvas', keywords = '', apiKey = '' } = req.body
+    const { images = [], category = 'Canvas', keywords = '', apiKey = '', provider = 'gemini' } = req.body
 
     // The "system" prompt defines the exact JSON we want back and the
     // Etsy rules (length limits, no brand names, etc.).
@@ -57,14 +76,18 @@ router.post('/generate', async (req, res) => {
       ...images.slice(0, 3).map((b) => ({ inline_data: { mime_type: 'image/png', data: b } })),
       { text: `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.` },
     ]
-    const j = await gemCall({
-      system_instruction: { parts: [{ text: sys }] },
-      contents: [{ parts }],
-      generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
-    }, apiKey)
-
-    // Pull the JSON out of the model's text response.
-    const txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+    // which AI to call? gemini = Google's own API; groq/openrouter = OpenAI-style
+    let txt = ''
+    if (provider === 'groq' || provider === 'openrouter') {
+      txt = await oaiCall(provider, apiKey, sys, `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.`, images.slice(0, 3))
+    } else {
+      const j = await gemCall({
+        system_instruction: { parts: [{ text: sys }] },
+        contents: [{ parts }],
+        generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
+      }, apiKey)
+      txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+    }
     const m = txt.match(/\{[\s\S]*\}/)
     if (!m) throw new Error('no JSON in AI response')
     res.json({ ok: true, seo: JSON.parse(m[0]) })

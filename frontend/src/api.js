@@ -50,20 +50,29 @@ export async function api(path, options = {}) {
   return res.json()
 }
 
-// ---- user's own Gemini API key (for the SEO feature) ----
-// Saved ONLY in this browser (localStorage) — never stored on our server
-// or in the database. It is sent along with each SEO request so the
-// backend can call Gemini using the USER'S OWN key.
-export const getGeminiKey = () => localStorage.getItem('mp_gemini_key') || ''
-export const setGeminiKey = (k) => {
-  if (k) localStorage.setItem('mp_gemini_key', k.trim())
-  else localStorage.removeItem('mp_gemini_key')
+// ---- user's own AI provider + key (for the SEO feature) ----
+// Saved ONLY in this browser (localStorage) — never on our server.
+// Shape: { prov: 'gemini', keys: { gemini:'', groq:'', openrouter:'' } }
+export const AI_PROVIDERS = [
+  { id: 'gemini', label: 'Google Gemini', help: 'aistudio.google.com/apikey' },
+  { id: 'groq', label: 'Groq (free — vision)', help: 'console.groq.com' },
+  { id: 'openrouter', label: 'OpenRouter (free models)', help: 'openrouter.ai' },
+]
+export const getAI = () => { try { return JSON.parse(localStorage.getItem('mp_ai') || '{}') } catch { return {} } }
+export const setAI = (ai) => localStorage.setItem('mp_ai', JSON.stringify(ai))
+// The ACTIVE provider's key. (Old name kept — screens gate SEO on this.)
+// Falls back to the old single-key storage so nobody's saved key is lost.
+export const getGeminiKey = () => {
+  const ai = getAI()
+  return (ai.keys || {})[ai.prov || 'gemini'] || localStorage.getItem('mp_gemini_key') || ''
 }
 
 // ---- simple endpoints ----
 export const health = () => api('/api/health')                                        // is the backend alive?
-export const genSeo = (payload) =>
-  api('/api/seo/generate', { method: 'POST', body: JSON.stringify({ ...payload, apiKey: getGeminiKey() }) })  // AI SEO (user's own key attached)
+export const genSeo = (payload) => {
+  const ai = getAI()
+  return api('/api/seo/generate', { method: 'POST', body: JSON.stringify({ ...payload, apiKey: getGeminiKey(), provider: ai.prov || 'gemini' }) })  // AI SEO (user's own provider+key)
+}
 
 // ---- Google sign-in (Supabase OAuth) ----
 // Supabase project URL is PUBLIC info (safe to keep in frontend code).
@@ -159,7 +168,15 @@ export const authResend = (email) => api('/api/auth/resend', { method: 'POST', b
 
 // Change the logged-in user's password (Account screen).
 // The auth token identifies the user, so only the new password is needed.
-export const authChangePassword = (password) => api('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password }) })
+export const authChangePassword = (password, currentPassword = '', currentEmail = '') =>
+  api('/api/auth/password', { method: 'PUT', body: JSON.stringify({ password, currentPassword, currentEmail }) })
+
+// Update the display name (first/last) stored on the account.
+export const authUpdateProfile = (firstName, lastName) => api('/api/auth/profile', { method: 'PUT', body: JSON.stringify({ firstName, lastName }) })
+
+// Change the login email (password is checked first; Supabase then emails
+// a confirmation link to finish the change).
+export const authChangeEmail = (email, password, currentEmail) => api('/api/auth/email', { method: 'PUT', body: JSON.stringify({ email, password, currentEmail }) })
 
 // ---- Etsy integration (everything runs through OUR backend; Etsy tokens
 //      never touch the browser). One MP store = one Etsy shop. ----
