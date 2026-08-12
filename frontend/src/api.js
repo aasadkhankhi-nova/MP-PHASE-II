@@ -172,6 +172,8 @@ export const etsy = {
   listings: (storeId, state = 'active', offset = 0) => api(`/api/etsy/listings?storeId=${storeId}&state=${state}&offset=${offset}`),
   counts: (storeId) => api(`/api/etsy/counts?storeId=${storeId}`),               // per-state totals for the tabs
   listing: (storeId, id) => api(`/api/etsy/listing?storeId=${storeId}&id=${id}`), // one listing, full detail
+  sections: (storeId) => api(`/api/etsy/sections?storeId=${storeId}`),            // shop's own sections (for the editor)
+  update: (storeId, id, patch) => api('/api/etsy/listing/update', { method: 'POST', body: JSON.stringify({ storeId, id, patch }) }), // save edits to Etsy
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 

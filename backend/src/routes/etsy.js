@@ -99,13 +99,24 @@ async function etsy(conn, path, opts = {}) {
     headers: {
       'x-api-key': apiKeyHdr(),
       authorization: `Bearer ${conn.access_token}`,
-      ...(opts.body && !(opts.body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
+      ...(typeof opts.body === 'string' ? { 'content-type': 'application/json' } : {}),
       ...(opts.headers || {}),
     },
   })
   const j = await res.json().catch(() => ({}))
   if (!res.ok) throw Object.assign(new Error(j.error || `Etsy HTTP ${res.status}`), { status: res.status })
   return j
+}
+
+// Build a form-encoded body the way Etsy's write endpoints expect:
+// arrays (tags, materials) become one comma-separated value.
+function form(obj) {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(obj)) {
+    if (v === undefined || v === null) continue
+    p.append(k, Array.isArray(v) ? v.join(',') : String(v))
+  }
+  return p
 }
 
 // ---------- 1. connect flow ----------
@@ -255,7 +266,7 @@ router.post('/publish', requireUser, async (req, res) => {
     // 1) the draft listing itself
     const listing = await etsy(conn, `/shops/${conn.shop_id}/listings`, {
       method: 'POST',
-      body: JSON.stringify({
+      body: form({
         title: String(title).slice(0, 140),
         description: description || title,
         tags: tags.slice(0, 13),
@@ -377,9 +388,49 @@ router.get('/listing', requireUser, async (req, res) => {
         images: (l.images || []).map((im) => im.url_570xN || im.url_fullxfull).filter(Boolean),
         personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '' },
         section_id: l.shop_section_id || null,
+        autoRenew: !!l.should_auto_renew,
         created: l.created_timestamp ? new Date(l.created_timestamp * 1000).toISOString().slice(0, 10) : null,
       },
     })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// ---------- 6. EDIT (E2): shop sections + save basic fields ----------
+
+// GET /api/etsy/sections?storeId=...
+// The shop's OWN sections (Trendy, Halloween, ...) for the Section dropdown.
+router.get('/sections', requireUser, async (req, res) => {
+  try {
+    const { storeId } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/sections`)
+    res.json({ ok: true, sections: (r.results || []).map((x) => ({ id: x.shop_section_id, title: x.title })) })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/update
+// { storeId, id, patch: { title, description, tags[], materials[], sectionId, autoRenew } }
+// Saves the basic fields straight to the live listing on Etsy (updateListing).
+// (Price/quantity/variations live in Etsy's inventory system — that is the
+//  next milestone, E4 — so they are not accepted here on purpose.)
+router.post('/listing/update', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, patch = {} } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const body = {}
+    if (patch.title !== undefined) body.title = String(patch.title).slice(0, 140)
+    if (patch.description !== undefined) body.description = String(patch.description)
+    if (patch.tags !== undefined) body.tags = (patch.tags || []).slice(0, 13)
+    if (patch.materials !== undefined) body.materials = (patch.materials || []).slice(0, 13)
+    if (patch.sectionId !== undefined && patch.sectionId) body.shop_section_id = Number(patch.sectionId)
+    if (patch.autoRenew !== undefined) body.should_auto_renew = patch.autoRenew ? 'true' : 'false'
+    if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'kuch badla hi nahi' })
+    const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form(body) })
+    res.json({ ok: true, title: l.title })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
