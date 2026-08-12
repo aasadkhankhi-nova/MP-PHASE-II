@@ -187,6 +187,8 @@ export const etsy = {
   addVideo: (storeId, id, dataUrl, name) => api('/api/etsy/listing/video', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, name }) }),
   delVideo: (storeId, id, videoId) => api('/api/etsy/listing/video/delete', { method: 'POST', body: JSON.stringify({ storeId, id, videoId }) }),
   setState: (storeId, id, state) => api('/api/etsy/listing/state', { method: 'POST', body: JSON.stringify({ storeId, id, state }) }), // publish / deactivate
+  index: (storeId, state) => api(`/api/etsy/index?storeId=${storeId}&state=${state}`),   // POORI shop ka index (filter sidebar ke liye)
+  deleteListing: (storeId, id) => api('/api/etsy/listing/delete', { method: 'POST', body: JSON.stringify({ storeId, id }) }),
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }
 

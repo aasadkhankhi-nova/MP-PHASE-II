@@ -100,3 +100,15 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .shop-switch-row:hover { background: var(--accent-soft); }
 .shop-switch-row.add { justify-content: center; font-weight: 700; color: var(--accent); border-top: 1px solid var(--line); border-radius: 0 0 8px 8px; margin-top: 4px; }
 .dot-on { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+
+/* ---- Etsy Store: Vela-style filter sidebar + content layout ---- */
+.etsy-layout { display: flex; gap: 14px; align-items: flex-start; }
+.etsy-filters { width: 215px; flex-shrink: 0; background: var(--panel, #fff); border: 1px solid var(--line); border-radius: 14px; padding: 10px 8px; position: sticky; top: 10px; max-height: calc(100vh - 90px); overflow: auto; }
+.fgroup { margin-bottom: 12px; }
+.fgroup-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.4px; color: var(--muted); padding: 4px 8px; }
+.frow { display: flex; align-items: center; gap: 6px; width: 100%; border: 0; background: none; padding: 6px 8px; border-radius: 8px; cursor: pointer; font-size: 13px; color: inherit; }
+.frow:hover { background: var(--accent-soft); }
+.frow.active { background: var(--accent); color: #fff; font-weight: 600; }
+.frow-count { font-size: 12px; color: var(--muted); flex-shrink: 0; }
+.frow.active .frow-count { color: rgba(255,255,255,0.85); }
+@media (max-width: 900px) { .etsy-layout { flex-direction: column; } .etsy-filters { width: 100%; position: static; max-height: none; } }

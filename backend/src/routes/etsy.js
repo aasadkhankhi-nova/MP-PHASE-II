@@ -720,4 +720,63 @@ router.post('/listing/state', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// ---------- 10. shop INDEX (powers the Vela-style filter sidebar) ----------
+// One call fetches ALL listings of a state (pages of 100) with the facts
+// needed for filtering: section, shipping profile, return policy, video.
+// Cached in memory for 10 minutes per shop+state (Etsy rate-limit friendly).
+const IDX_CACHE = new Map()
+router.get('/index', requireUser, async (req, res) => {
+  try {
+    const { storeId, state = 'active' } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const ck = `${conn.shop_id}:${state}`
+    const hit = IDX_CACHE.get(ck)
+    if (hit && Date.now() - hit.at < 10 * 60 * 1000 && !req.query.fresh) return res.json({ ok: true, cached: true, listings: hit.listings })
+
+    const listings = []
+    let offset = 0, total = Infinity
+    while (offset < total && offset < 5000) {   // safety cap
+      const r = await etsy(conn, `/shops/${conn.shop_id}/listings?state=${encodeURIComponent(state)}&limit=100&offset=${offset}&includes=Images,Videos`)
+      total = r.count || 0
+      for (const l of r.results || []) {
+        listings.push({
+          id: l.listing_id,
+          title: l.title,
+          state: l.state,
+          quantity: l.quantity,
+          views: l.views,
+          price: money(l.price),
+          currency: l.price?.currency_code || 'USD',
+          img: l.images?.[0]?.url_170x135 || l.images?.[0]?.url_570xN || null,
+          ending: l.ending_timestamp ? new Date(l.ending_timestamp * 1000).toISOString().slice(0, 10) : null,
+          created: l.created_timestamp || 0,
+          sectionId: l.shop_section_id || null,
+          shipId: l.shipping_profile_id || null,
+          retId: l.return_policy_id || null,
+          video: !!(l.videos && l.videos.length),
+        })
+      }
+      if (!(r.results || []).length) break
+      offset += 100
+    }
+    IDX_CACHE.set(ck, { at: Date.now(), listings })
+    res.json({ ok: true, cached: false, listings })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/delete { storeId, id } — permanently delete a listing on Etsy.
+router.post('/listing/delete', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    await etsy(conn, `/listings/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    IDX_CACHE.clear()   // index is stale now
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 export default router

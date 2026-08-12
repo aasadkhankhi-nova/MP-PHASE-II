@@ -155,7 +155,7 @@ function Shell() {
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
-    eff === 'etsystore' ? <EtsyStore /> :
+    eff === 'etsystore' ? <EtsyStore go={setScreen} /> :
     eff === 'results' ? <Results /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
