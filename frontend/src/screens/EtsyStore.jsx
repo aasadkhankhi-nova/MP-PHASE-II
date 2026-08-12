@@ -190,17 +190,15 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
       <div className="card">
         <div className="topbar" style={{ margin: 0, gap: 8, flexWrap: 'wrap' }}>
           <span style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-            <button className="btn sm" style={{ background: '#b0206e' }} disabled={es.busy} onClick={onRefresh}>
-              ↻ Refresh shop{es.at ? ' · ' + ago(es.at) : ''}
-            </button>
-            {sel.size > 0 && <span className="chip">{sel.size} selected</span>}
+            {sel.size > 0 ? <span className="chip">{sel.size} selected</span> : <span className="chip">{rows.length} listings</span>}
           </span>
           <span style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <input placeholder="🔍 Search title" value={q} onChange={(e) => { setQ(e.target.value); setPage(0) }} style={{ minWidth: 160 }} />
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
             </select>
-            <button className="btn sm" style={{ background: '#0e9384' }} onClick={onCreate}>＋ Create listing</button>
+            {/* brand blue — same as every other primary button in ListPilot */}
+            <button className="btn sm" onClick={onCreate}>＋ Create listing</button>
           </span>
         </div>
       </div>

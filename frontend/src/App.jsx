@@ -220,6 +220,16 @@ function Shell() {
   }
   const onDeleted = (id) => setEs((e) => ({ ...e, idx: (e.idx || []).filter((l) => String(l.id) !== String(id)) }))
 
+  // "＋ Add shop" (panel ke bottom par, Vela-style) — seedha Etsy grant-access
+  const addShopBottom = async () => {
+    try {
+      const st = await app.addStore('New shop')
+      await app.selectStore(st.id)
+      const r = await etsy.connectUrl(st.id)
+      window.location.href = r.url
+    } catch (e) { alert('⚠ ' + (e.message || e)) }
+  }
+
   // GATE 1: must be logged in.
   if (app.ready && !app.authed) return <Login />
 
@@ -365,17 +375,26 @@ function Shell() {
         </div>
         )}
 
-        {/* server warning (only when the free server is waking up) */}
-        {api.state === 'down' && (
-          <div className="side-bottom">
+        {/* ---- pinned bottom: Add shop (Vela-style) + server warning ---- */}
+        <div className="side-bottom">
+          {api.state === 'down' && (
             <span className="chip err">⚠ server jag raha hai… thori dair me refresh karein</span>
-          </div>
-        )}
+          )}
+          <button className="add-shop-btn" onClick={addShopBottom}>＋ Add shop</button>
+        </div>
       </aside>
 
       <main className="main">
         <div className="topbar">
-          <h1>{current ? `${current.icon} ${current.label}` : ''}</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {current ? (eff === 'etsystore' ? current.label : `${current.icon} ${current.label}`) : ''}
+            {/* refresh = sirf gol icon, Vela jaisa (hover par waqt dikhta hai) */}
+            {eff === 'etsystore' && es.connected && (
+              <button className={'refresh-ic' + (es.busy ? ' spin' : '')} disabled={es.busy}
+                title={'Refresh shop' + (es.at ? ' · ' + Math.max(1, Math.round((Date.now() - es.at) / 60000)) + ' min ago' : '')}
+                onClick={() => loadIndex(true)}>⟳</button>
+            )}
+          </h1>
           <span style={{ display: 'flex', gap: 6 }}>
             {app.authed && <span className={'chip ' + (app.sync.state === 'error' ? 'err' : 'ok')}>{app.sync.state === 'ok' ? '☁ synced' : app.sync.state === 'pending' ? '☁ saving…' : app.sync.state === 'pulling' ? '☁ loading…' : app.sync.state === 'error' ? '☁ error' : '☁'}</span>}
             {app.curStore && <span className="chip">{es.shopName ? '🛍️ ' + es.shopName : '🏬 ' + app.curStore.name}</span>}
