@@ -11,6 +11,7 @@ import React, { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
 import { Empty } from '../components/ui.jsx'
+import PhotoEdit from './PhotoEdit.jsx'
 
 const SORTS = [
   { id: 'title_az', label: 'Title: A to Z' },
@@ -789,6 +790,8 @@ function PhotosEditor({ storeId, listingId, initial }) {
   const [menu, setMenu] = useState(null)      // kis photo ka ⋯ menu khula hai (id)
   const [altFor, setAltFor] = useState(null)  // kis photo ka alt editor khula hai (id)
   const [altTxt, setAltTxt] = useState('')
+  const [editIdx, setEditIdx] = useState(null)  // kaunsi photo editor me khuli hai (index)
+  const [editSrc, setEditSrc] = useState(null)  // uski dataURL (editor ke liye)
   const repRef = React.useRef(null)           // Replace ke liye chhupa file input
   const repIdx = React.useRef(-1)
 
@@ -852,6 +855,33 @@ function PhotosEditor({ storeId, listingId, initial }) {
     } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false); repIdx.current = -1 }
   }
 
+  // ✎ Edit: photo editor kholo (CDN image backend proxy se dataURL ban kar aati hai)
+  const openEdit = async (i) => {
+    setBusy(true); setMsg(null)
+    try {
+      const im = imgs[i]
+      const src = im.url.startsWith('data:') ? im.url : await etsy.imageData(im.full || im.url)
+      setEditIdx(i); setEditSrc(src)
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
+  // Editor ke Apply par: edited image purani ki JAGAH Etsy par chadh jati hai
+  const applyEdit = async (dataUrl) => {
+    const i = editIdx
+    setEditIdx(null); setEditSrc(null)
+    setBusy(true); setMsg('⏳ edited photo Etsy par chadh rahi hai…')
+    try {
+      const old = imgs[i]
+      await etsy.delImage(storeId, listingId, old.id)
+      const res = await etsy.addImage(storeId, listingId, dataUrl, i + 1)
+      const a = imgs.map((x, xi) => (xi === i ? { id: res.imageId, url: dataUrl, full: null, alt: old.alt } : x))
+      setImgs(a)
+      await etsy.orderImages(storeId, listingId, a.map((x) => x.id))
+      if (old.alt) await etsy.setAlt(storeId, listingId, res.imageId, old.alt, i + 1)  // alt wapas laga do
+      setMsg('✅ Edited photo Etsy par save ho gayi')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
   const saveAlt = async () => {
     const i = imgs.findIndex((x) => x.id === altFor)
     if (i < 0) return
@@ -880,7 +910,7 @@ function PhotosEditor({ storeId, listingId, initial }) {
             <img src={im.url} alt={im.alt || ''} draggable={false} />
             {/* hover tools — top-right corner */}
             <div className="ph-tools" onClick={(e) => e.stopPropagation()}>
-              <button className="ph-tool" title="Edit photo" onClick={() => setMsg('✏️ Photo edit page jald aa raha hai')}>✎</button>
+              <button className="ph-tool" title="Edit photo" onClick={() => openEdit(i)}>✎</button>
               <button className="ph-tool" title="Delete" onClick={() => del(im)}>🗑</button>
               <button className="ph-tool" title="More" onClick={() => setMenu(menu === im.id ? null : im.id)}>⋯</button>
               {menu === im.id && (
@@ -931,6 +961,11 @@ function PhotosEditor({ storeId, listingId, initial }) {
         </div>
       )}
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+
+      {/* full-screen photo editor (Etsy jaisa) */}
+      {editIdx !== null && editSrc && (
+        <PhotoEdit src={editSrc} onApply={applyEdit} onCancel={() => { setEditIdx(null); setEditSrc(null) }} />
+      )}
     </div>
   )
 }

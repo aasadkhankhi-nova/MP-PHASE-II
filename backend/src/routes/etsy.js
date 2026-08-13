@@ -661,6 +661,24 @@ router.post('/listing/image', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// GET /api/etsy/imgfetch?url=...
+// Photo-editor ke liye: Etsy CDN ki image ke pixels chahiye hote hain,
+// magar browser ka CORS direct fetch rok deta hai — to backend utha kar deta hai.
+// Sirf *.etsystatic.com allowed (security: koi aur URL fetch nahi hoga).
+router.get('/imgfetch', requireUser, async (req, res) => {
+  try {
+    const u = new URL(String(req.query.url || ''))
+    if (!/(^|\.)etsystatic\.com$/.test(u.hostname) || u.protocol !== 'https:') {
+      return res.status(400).json({ ok: false, error: 'sirf Etsy ki images' })
+    }
+    const r = await fetch(u.href)
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: 'image fetch failed' })
+    res.set('content-type', r.headers.get('content-type') || 'image/jpeg')
+    res.set('cache-control', 'private, max-age=300')
+    res.send(Buffer.from(await r.arrayBuffer()))
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
 // POST /api/etsy/listing/image/alt { storeId, id, imageId, alt, rank }
 // Alt text set/change karna: Etsy me maujuda image ko usi ke listing_image_id
 // ke saath dobara POST karte hain (file dobara upload NAHI hoti) + alt_text.

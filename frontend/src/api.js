@@ -202,6 +202,16 @@ export const etsy = {
   delImage: (storeId, id, imageId) => api('/api/etsy/listing/image/delete', { method: 'POST', body: JSON.stringify({ storeId, id, imageId }) }),
   orderImages: (storeId, id, order) => api('/api/etsy/listing/image/order', { method: 'POST', body: JSON.stringify({ storeId, id, order }) }),
   setAlt: (storeId, id, imageId, alt, rank) => api('/api/etsy/listing/image/alt', { method: 'POST', body: JSON.stringify({ storeId, id, imageId, alt, rank }) }),
+  // Photo-editor: Etsy CDN image -> dataURL (backend proxy se, CORS ke bina)
+  imageData: async (url) => {
+    const s = getSession()
+    const res = await fetch(`${getApiBase()}/api/etsy/imgfetch?url=${encodeURIComponent(url)}`, {
+      headers: s?.access_token ? { Authorization: `Bearer ${s.access_token}` } : {},
+    })
+    if (!res.ok) throw new Error('image load nahi hui (' + res.status + ')')
+    const blob = await res.blob()
+    return new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
+  },
   addVideo: (storeId, id, dataUrl, name) => api('/api/etsy/listing/video', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, name }) }),
   delVideo: (storeId, id, videoId) => api('/api/etsy/listing/video/delete', { method: 'POST', body: JSON.stringify({ storeId, id, videoId }) }),
   setState: (storeId, id, state) => api('/api/etsy/listing/state', { method: 'POST', body: JSON.stringify({ storeId, id, state }) }), // publish / deactivate
