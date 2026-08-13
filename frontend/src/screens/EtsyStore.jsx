@@ -970,21 +970,28 @@ function PhotosEditor({ storeId, listingId, initial }) {
   )
 }
 
-/** VideoEditor (E5) — the listing's one video: view, replace (MP4), delete. */
+/**
+ * VideoEditor (Vela-style) — video na ho to Upload tile (Vela jaisi),
+ * ho to PLAYABLE video player (check karne ke liye) + Replace / Delete.
+ * Abhi-abhi upload ki hui video foran local copy se chal jati hai;
+ * Etsy apni taraf se process hone ke baad CDN wali dikhata hai.
+ */
 function VideoEditor({ storeId, listingId, initial }) {
   const [video, setVideo] = useState(initial)  // {id, url, thumb} | null
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
+  const MAX_MB = 40  // Etsy ki apni had 100MB hai; free server ~40MB tak utha sakta hai
+
   const upload = async (f) => {
     if (!f) return
-    if (f.size > 15 * 1024 * 1024) return setMsg('⚠ Video 15MB se choti rakhein (app ki transport limit)')
+    if (f.size > MAX_MB * 1024 * 1024) return setMsg(`⚠ Video ${MAX_MB}MB se choti rakhein (Etsy ki had 100MB hai, magar free server itna hi utha sakta hai)`)
     setBusy(true); setMsg(null)
     try {
       const dataUrl = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
       const res = await etsy.addVideo(storeId, listingId, dataUrl, f.name)
-      setVideo({ id: res.videoId, url: null, thumb: null })
-      setMsg('✅ Video upload ho gayi (Etsy usay process karega — kuch minute)')
+      setVideo({ id: res.videoId, url: dataUrl, thumb: null })  // dataURL = neeche foran playable
+      setMsg('✅ Video Etsy par upload ho gayi (Etsy process karega — tab tak neeche local copy chal rahi hai)')
     } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
@@ -998,15 +1005,34 @@ function VideoEditor({ storeId, listingId, initial }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>🎬 Video {video ? <span className="chip ok">hai</span> : <span className="chip">nahi</span>}</h3>
-      {video?.thumb && <img src={video.thumb} alt="video" style={{ maxWidth: 200, borderRadius: 8, marginBottom: 8 }} />}
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-        <label className="btn ghost" style={{ cursor: 'pointer' }}>
-          {video ? '↻ Replace video' : '＋ Upload video'} (MP4)
+
+      {/* video NAHI: Vela jaisi upload tile */}
+      {!video && (
+        <label className="vd-upload">
+          <span style={{ fontSize: 30 }}>🎬</span>
+          <b style={{ color: 'var(--accent)' }}>Upload</b>
+          <span className="muted" style={{ fontSize: 12 }}>Max file size: {MAX_MB} MB · MP4</span>
           <input type="file" accept="video/mp4,video/quicktime" style={{ display: 'none' }} onChange={(e) => { upload(e.target.files[0]); e.target.value = '' }} />
         </label>
-        {video && <button className="btn danger" disabled={busy} onClick={del}>🗑 Delete</button>}
-        {busy && <span className="muted">⏳ upload ho rahi hai…</span>}
-      </div>
+      )}
+
+      {/* video HAI: player (check karne ke liye) + Replace / Delete */}
+      {video && (
+        <>
+          {video.url
+            ? <video className="vd-player" src={video.url} poster={video.thumb || undefined} controls preload="metadata" />
+            : <p className="muted">⏳ Etsy video process kar raha hai — kuch minute baad listing dobara kholein to yahan play hogi.</p>}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginTop: 10 }}>
+            <label className="btn ghost" style={{ cursor: 'pointer' }}>
+              ↻ Replace video (MP4)
+              <input type="file" accept="video/mp4,video/quicktime" style={{ display: 'none' }} onChange={(e) => { upload(e.target.files[0]); e.target.value = '' }} />
+            </label>
+            <button className="btn danger" disabled={busy} onClick={del}>🗑 Delete</button>
+          </div>
+        </>
+      )}
+
+      {busy && <p className="muted" style={{ marginTop: 8 }}>⏳ upload ho rahi hai… (bari video me waqt lagta hai)</p>}
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
