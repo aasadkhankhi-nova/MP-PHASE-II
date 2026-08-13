@@ -785,6 +785,133 @@ router.post('/inventory/update', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// POST /api/etsy/listing/create-full { storeId, data }
+// LAUNCHPAD ka final Publish: Etsy par is se PEHLE kuch nahi jata.
+// data = { title, description, tags[], materials[], sku, state ('draft'|'active'),
+//   images: [{dataUrl, alt}], video (dataUrl|null),
+//   details: { whoMade, whenMade, isSupply, taxonomyId, sectionId, autoRenew,
+//              partnerIds[], attrs: {propertyId: {ids[], names[]}} },
+//   shipping: { shippingProfileId, returnPolicyId, readinessStateId, wt, wtU, dimL, dimW, dimH, dimU },
+//   priceQty: { price, quantity },
+//   variations: null | { pOn[], qOn[], sOn[], products: [{propertyValues, price, quantity, enabled}] } }
+router.post('/listing/create-full', requireUser, async (req, res) => {
+  try {
+    const { storeId, data } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const d = data || {}
+    const det = d.details || {}
+    const sh = d.shipping || {}
+    if (!d.title) return res.status(400).json({ ok: false, error: 'Title chahiye' })
+    if (!det.taxonomyId) return res.status(400).json({ ok: false, error: 'Profile me Category (Details) set nahi hai — pehle profile me category set karein' })
+    if (!sh.shippingProfileId) return res.status(400).json({ ok: false, error: 'Profile me Shipping profile set nahi hai' })
+
+    // 1) draft listing — core fields
+    const priceBase = Number(d.variations?.products?.[0]?.price) || Number(d.priceQty?.price) || 1
+    const draft = {
+      quantity: Number(d.priceQty?.quantity) || 999,
+      title: String(d.title).slice(0, 140),
+      description: d.description || d.title,
+      price: priceBase,
+      who_made: det.whoMade || 'i_did',
+      when_made: det.whenMade || 'made_to_order',
+      taxonomy_id: Number(det.taxonomyId),
+      shipping_profile_id: Number(sh.shippingProfileId),
+      tags: (d.tags || []).slice(0, 13),
+      materials: (d.materials || []).slice(0, 13),
+    }
+    if (sh.returnPolicyId) draft.return_policy_id = Number(sh.returnPolicyId)
+    if (sh.readinessStateId) draft.readiness_state_id = Number(sh.readinessStateId)
+    if (det.sectionId) draft.shop_section_id = Number(det.sectionId)
+    if (det.isSupply) draft.is_supply = 'true'
+    const nl = await etsy(conn, `/shops/${conn.shop_id}/listings`, { method: 'POST', body: form(draft) })
+
+    // 2) photos (alt text ke saath)
+    let uploaded = 0
+    const imgErrors = []
+    for (const im of (d.images || []).slice(0, 20)) {
+      try {
+        const { bytes, mime } = fromDataUrl(im.dataUrl)
+        const fd = new FormData()
+        fd.append('image', new Blob([bytes], { type: mime }), `photo-${uploaded + 1}.jpg`)
+        fd.append('rank', String(uploaded + 1))
+        if (im.alt) fd.append('alt_text', String(im.alt).slice(0, 500))
+        await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}/images`, { method: 'POST', body: fd })
+        uploaded++
+      } catch (e) { imgErrors.push(e.message) }
+    }
+
+    // 3) extras patch: weight/dims/partners/auto-renew
+    const patch = {}
+    if (sh.wt) { patch.item_weight = Number(sh.wt); patch.item_weight_unit = sh.wtU || 'oz' }
+    if (sh.dimL || sh.dimW || sh.dimH) {
+      if (sh.dimL) patch.item_length = Number(sh.dimL)
+      if (sh.dimW) patch.item_width = Number(sh.dimW)
+      if (sh.dimH) patch.item_height = Number(sh.dimH)
+      patch.item_dimensions_unit = sh.dimU || 'in'
+    }
+    if ((det.partnerIds || []).length) patch.production_partner_ids = det.partnerIds
+    if (det.autoRenew) patch.should_auto_renew = 'true'
+    if (Object.keys(patch).length) {
+      try { await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}`, { method: 'PATCH', body: form(patch) }) } catch {}
+    }
+
+    // 4) attributes (profile se)
+    for (const [pid, v] of Object.entries(det.attrs || {})) {
+      const ids = (v?.ids || []).map(Number).filter(Boolean)
+      if (!ids.length) continue
+      try {
+        await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}/properties/${encodeURIComponent(pid)}`, {
+          method: 'PUT', body: form({ value_ids: ids, values: v.names || [] }),
+        })
+      } catch {}
+    }
+
+    // 5) inventory: variations (profile se) ya single — SKU user wala har jagah
+    try {
+      const ready = sh.readinessStateId ? { readiness_state_id: Number(sh.readinessStateId) } : {}
+      if (d.variations?.products?.length) {
+        const prods = d.variations.products.map((p) => ({
+          sku: d.sku || '',
+          property_values: p.propertyValues || [],
+          offerings: [{ price: Number(p.price) || priceBase, quantity: Number(p.quantity) || 999, is_enabled: p.enabled !== false, ...ready }],
+        }))
+        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+          method: 'PUT',
+          body: JSON.stringify({ products: prods, price_on_property: d.variations.pOn || [], quantity_on_property: d.variations.qOn || [], sku_on_property: [] }),
+        })
+      } else if (d.sku) {
+        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+          method: 'PUT',
+          body: JSON.stringify({ products: [{ sku: d.sku, property_values: [], offerings: [{ price: priceBase, quantity: Number(d.priceQty?.quantity) || 999, is_enabled: true, ...ready }] }], price_on_property: [], quantity_on_property: [], sku_on_property: [] }),
+        })
+      }
+    } catch (e) { imgErrors.push('inventory: ' + e.message) }
+
+    // 6) video (MP4 slideshow)
+    if (d.video) {
+      try {
+        const { bytes, mime } = fromDataUrl(d.video)
+        const fd = new FormData()
+        fd.append('video', new Blob([bytes], { type: mime || 'video/mp4' }), 'listing-video.mp4')
+        fd.append('name', 'listing-video.mp4')
+        await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}/videos`, { method: 'POST', body: fd })
+      } catch (e) { imgErrors.push('video: ' + e.message) }
+    }
+
+    // 7) state: user ne Active dabaya to live, warna draft hi rehta hai
+    let stateErr = null
+    if (d.state === 'active') {
+      try { await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}`, { method: 'PATCH', body: form({ state: 'active' }) }) }
+      catch (e) { stateErr = e.message }
+    }
+
+    IDX_CACHE.clear()
+    res.json({ ok: true, id: nl.listing_id, url: `https://www.etsy.com/listing/${nl.listing_id}`, uploaded, imgErrors, stateErr })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 // POST /api/etsy/listing/copy { storeId, id }
 // Vela jaisa COPY: listing ki puri nakal ek naye DRAFT ke tor par —
 // fields + photos (CDN se utha kar dobara upload) + variations + personalization.

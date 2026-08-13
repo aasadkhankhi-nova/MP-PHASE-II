@@ -12,6 +12,7 @@ import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
 import { Empty } from '../components/ui.jsx'
 import PhotoEdit from './PhotoEdit.jsx'
+import { getProfiles, upsertProfile, newProfileId } from '../store/profiles.js'
 
 const SORTS = [
   { id: 'title_az', label: 'Title: A to Z' },
@@ -418,6 +419,21 @@ function NewShipProfile({ storeId, onDone }) {
   )
 }
 
+// Category tree me kisi taxonomy id ka pura rasta (root -> leaf) dhoondo
+function findTaxoPath(tree, taxonomyId) {
+  const path = []
+  const find = (nodes, trail) => {
+    for (const n of nodes || []) {
+      const t = [...trail, n.id]
+      if (String(n.id) === String(taxonomyId)) { path.push(...t); return true }
+      if (n.children?.length && find(n.children, t)) return true
+    }
+    return false
+  }
+  find(tree, [])
+  return path
+}
+
 // Edit page ke sections — EK page par, tab click = scroll (Vela jaisa)
 const ETABS = [
   ['photos', 'Photos'], ['video', 'Video'], ['title', 'Title'],
@@ -521,6 +537,71 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
 
+  // ⊞ Save as Profile — is listing ka template ban jata hai:
+  // materials + Details sab + price/qty + variations (SKU ke BAGHAIR) +
+  // shipping sab + description ka profile-hissa (pehli khali line ke baad wala)
+  const saveAsProfile = () => {
+    const name = prompt('Profile ka naam:', '')
+    if (!name || !name.trim()) return
+    const inv = reg.current.getInventory ? reg.current.getInventory() : null
+    const hasVars = inv && inv.rows.length && (inv.rows.length > 1 || (inv.rows[0].propertyValues || []).length)
+    // attributes ids + names (names Etsy ko wapas bhejne ke liye chahiye hote hain)
+    const attrs = {}
+    for (const [pid, ids] of Object.entries(propSel)) {
+      if (!ids?.length) continue
+      const P = (props || []).find((x) => String(x.propertyId) === String(pid))
+      attrs[pid] = { ids, names: ids.map((id) => P?.options.find((o) => String(o.id) === String(id))?.name).filter(Boolean) }
+    }
+    const nl = desc.indexOf('\n\n')
+    upsertProfile({
+      id: newProfileId(), name: name.trim(), at: Date.now(),
+      desc2: nl >= 0 ? desc.slice(nl + 2).trim() : '',
+      materials: mats,
+      details: {
+        ltype, isSupply, whoMade, whenMade,
+        partnerIds, taxonomyId: effTaxo || detail.taxonomyId || null,
+        attrs, autoRenew, sectionId: sectionId || '',
+      },
+      priceQty: inv && inv.rows[0] ? { price: inv.rows[0].price, quantity: inv.rows[0].quantity } : null,
+      variations: hasVars ? {
+        pOn: inv.pOn, qOn: inv.qOn, sOn: [],
+        products: inv.rows.map((r) => ({ propertyValues: r.propertyValues, price: r.price, quantity: r.quantity, enabled: r.enabled })),
+      } : null,
+      shipping: { readinessStateId: readyId || '', shippingProfileId: shipId || '', returnPolicyId: retId || '', wt, wtU, dimL, dimW, dimH, dimU },
+    })
+    setProfTick((t) => t + 1)
+    setMsg(`⊞ Profile "${name.trim()}" save ho gaya — Profiles panel (🧩) aur Choose Profile me maujud hai`)
+  }
+
+  // Choose Profile — profile ki sari cheezen is listing par LAG jati hain
+  // (sirf screen par; Etsy par Publish se jayengi). SKU ko haath nahi lagta.
+  const applyProfile = (pid) => {
+    setProfSel(pid)
+    const p = getProfiles().find((x) => x.id === pid)
+    if (!p) return
+    if (p.materials?.length) setMats(p.materials)
+    const dd = p.details || {}
+    if (dd.ltype) setLtype(dd.ltype)
+    setIsSupply(!!dd.isSupply)
+    if (dd.whoMade) setWhoMade(dd.whoMade)
+    if (dd.whenMade) setWhenMade(dd.whenMade)
+    if (dd.partnerIds) setPartnerIds(dd.partnerIds.map(String))
+    if (dd.sectionId !== undefined) setSectionId(dd.sectionId || '')
+    setAutoRenew(!!dd.autoRenew)
+    if (dd.attrs) setPropSel(Object.fromEntries(Object.entries(dd.attrs).map(([k, v]) => [k, v.ids || []])))
+    if (dd.taxonomyId && taxoTree) { const path = findTaxoPath(taxoTree, dd.taxonomyId); if (path.length) setTaxoPath(path) }
+    const sp = p.shipping || {}
+    if (sp.readinessStateId) setReadyId(String(sp.readinessStateId))
+    if (sp.shippingProfileId) setShipId(String(sp.shippingProfileId))
+    if (sp.returnPolicyId) setRetId(String(sp.returnPolicyId))
+    if (sp.wt !== undefined) { setWt(sp.wt); setWtU(sp.wtU || 'oz') }
+    if (sp.dimL !== undefined) { setDimL(sp.dimL); setDimW(sp.dimW || ''); setDimH(sp.dimH || ''); setDimU(sp.dimU || 'in') }
+    // description: design wala hissa upar rehta hai, profile ka hissa neeche lagta hai
+    if (p.desc2) setDesc((cur) => (cur.includes(p.desc2) ? cur : (cur.trim() + '\n\n' + p.desc2)))
+    if (reg.current.applyProfileInv) reg.current.applyProfileInv(p)
+    setMsg(`⊞ Profile "${p.name}" lag gaya — check kar ke Publish karein (SKU waise ka waisa raha)`)
+  }
+
   // ⧉ Copy — puri listing ki nakal naye DRAFT ke tor par (photos + variations sab)
   const doCopy = async () => {
     if (!confirm('Is listing ki COPY (naya draft) Etsy par banegi — photos, variations, sab kuch. Continue?')) return
@@ -530,8 +611,10 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
       setMsg(`✅ Copy ban gayi (draft, ${r.photos} photos) — ⟳ Refresh ke baad Draft filter me milegi`)
     } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
-  // profiles: Profiles section me jo profiles banengi wo yahan aayengi
-  const profiles = useMemo(() => { try { return JSON.parse(localStorage.getItem('mp_profiles') || '[]') } catch { return [] } }, [])
+  // profiles: ⊞ Save as Profile se banti hain; yahan list + apply hota hai
+  const [profTick, setProfTick] = useState(0)
+  const profiles = useMemo(() => getProfiles(), [profTick])
+  const [profSel, setProfSel] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
@@ -549,16 +632,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   // tree aane par: listing ki category ka pura rasta (root -> leaf) nikal lo
   useEffect(() => {
     if (!taxoTree || !detail.taxonomyId) return
-    const path = []
-    const find = (nodes, trail) => {
-      for (const n of nodes || []) {
-        const t = [...trail, n.id]
-        if (String(n.id) === String(detail.taxonomyId)) { path.push(...t); return true }
-        if (n.children?.length && find(n.children, t)) return true
-      }
-      return false
-    }
-    find(taxoTree, [])
+    const path = findTaxoPath(taxoTree, detail.taxonomyId)
     if (path.length) setTaxoPath(path)
   }, [taxoTree, detail.taxonomyId])
 
@@ -663,12 +737,12 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
 
       {/* ---- Choose Profile (Profiles section me bani profiles yahan aayengi) ---- */}
       <div className="profile-bar" style={{ marginBottom: 0 }}>
-        <select defaultValue="">
+        <select value={profSel} onChange={(e) => applyProfile(e.target.value)}>
           <option value="">⊞ Choose Profile</option>
           {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          {!profiles.length && <option disabled>— abhi koi profile nahi bani —</option>}
+          {!profiles.length && <option disabled>— abhi koi profile nahi (⊞ Save as Profile se banayein) —</option>}
         </select>
-        <span className="muted" style={{ fontSize: 12 }}>Profiles section jab banega, wahan ki profiles is dropdown me aayengi.</span>
+        <span className="muted" style={{ fontSize: 12 }}>Profile chunte hi materials, details, price, variations, shipping sab lag jata hai — Publish par Etsy jayega.</span>
       </div>
       </div>
 
@@ -989,7 +1063,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
         <a className="btn ghost" style={{ textDecoration: 'none' }} href={detail.url} target="_blank" rel="noreferrer">
           <span style={{ color: '#f1641e', fontWeight: 800 }}>E</span> View on Etsy
         </a>
-        <button className="btn ghost" disabled={busy} onClick={() => setMsg('⊞ Save as Profile — Profiles system jald aa raha hai')}>⊞ Save as Profile</button>
+        <button className="btn ghost" disabled={busy} onClick={saveAsProfile}>⊞ Save as Profile</button>
         <button className="btn ghost" disabled={busy} onClick={doCopy}>⧉ Copy</button>
         <div className="pub-wrap">
           <button className="btn" disabled={busy} onClick={() => setPubMenu(!pubMenu)}>{busy ? '⏳…' : '⇧ Publish  ⌄'}</button>
@@ -1342,7 +1416,21 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
   useEffect(() => {
     if (!reg) return
     reg.current.inventory = async () => { if (vDirty) await pushInventory() }
-    return () => { if (reg) delete reg.current.inventory }
+    // profile system: current inventory dena + profile ki variations lagana
+    reg.current.getInventory = () => ({ pOn, qOn, sOn, rows })
+    reg.current.applyProfileInv = (p) => {
+      if (p.variations && p.variations.products?.length) {
+        setPOn(p.variations.pOn || []); setQOn(p.variations.qOn || []); setSOn([])
+        setRows(p.variations.products.map((x) => ({
+          ...x, sku: '',   // SKU profile me NAHI hota — user ka apna rehta hai
+          label: (x.propertyValues || []).map((pv) => (pv.values || []).join(', ')).join(' / ') || '—',
+        })))
+      } else if (p.priceQty) {
+        setRows((cur) => cur.map((r) => ({ ...r, price: p.priceQty.price ?? r.price, quantity: p.priceQty.quantity ?? r.quantity })))
+      }
+      setVDirty(true)
+    }
+    return () => { if (reg) { delete reg.current.inventory; delete reg.current.getInventory; delete reg.current.applyProfileInv } }
   })
 
   if (!inv) return <div className="card"><p className="muted">{msg || '⏳ Variations load ho rahi hain…'}</p></div>

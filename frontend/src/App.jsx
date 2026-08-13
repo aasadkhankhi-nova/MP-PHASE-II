@@ -15,6 +15,7 @@ import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import EtsyStore from './screens/EtsyStore.jsx'
+import { getProfiles, upsertProfile, delProfile, profileSummary } from './store/profiles.js'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
 
@@ -134,6 +135,55 @@ function Placeholder({ title }) {
     <div className="card">
       <h3 style={{ marginTop: 0 }}>{title}</h3>
       <p className="muted">Ye screen agle update me aa rahi hai.</p>
+    </div>
+  )
+}
+
+/**
+ * ProfilesPanel — 🧩 rail ka panel: sari profiles ki list (rename / delete).
+ * Profile BANANE ka tariqa: kisi listing ke edit page par sab set kar ke
+ * neeche ⊞ "Save as Profile" dabayein. Launchpad aur edit page dono
+ * isi list se profiles uthate hain.
+ */
+function ProfilesPanel() {
+  const [tick, setTick] = useState(0)
+  const list = getProfiles()
+  const rename = (p) => {
+    const n = prompt('Naya naam:', p.name)
+    if (n && n.trim()) { upsertProfile({ ...p, name: n.trim() }); setTick(tick + 1) }
+  }
+  const del = (p) => {
+    if (confirm(`Profile "${p.name}" delete karni hai?`)) { delProfile(p.id); setTick(tick + 1) }
+  }
+  return (
+    <div className="side-scroll">
+      <div className="nav-sec">Profiles ({list.length})</div>
+      {!list.length && (
+        <p className="muted" style={{ padding: '4px 10px' }}>
+          🧩 Abhi koi profile nahi. Kisi listing ke edit page par sab kuch set kar ke
+          neeche <b>⊞ Save as Profile</b> dabayein — details, price, variations,
+          shipping, materials aur description ka profile-hissa us me save ho jayega.
+          Phir Launchpad aur edit page par ek click me lagta hai.
+        </p>
+      )}
+      {list.map((p) => (
+        <div key={p.id} style={{ padding: '8px 10px', borderBottom: '1px solid var(--line)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <b className="ellip" style={{ flex: 1, fontSize: 13.5 }}>🧩 {p.name}</b>
+            <button className="btn sm ghost" title="Rename" onClick={() => rename(p)}>✏️</button>
+            <button className="btn sm danger" title="Delete" onClick={() => del(p)}>🗑</button>
+          </div>
+          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
+            {profileSummary(p).map((c) => <span key={c} className="chip" style={{ fontSize: 10.5, padding: '2px 8px' }}>{c}</span>)}
+          </div>
+        </div>
+      ))}
+      {list.length > 0 && (
+        <p className="muted" style={{ padding: '8px 10px', fontSize: 12 }}>
+          Profile update karne ka tariqa: kisi listing par usay laga kar tabdeeli karein,
+          phir dobara Save as Profile (naya naam ya wohi naam).
+        </p>
+      )}
     </div>
   )
 }
@@ -285,14 +335,7 @@ function Shell() {
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
         {rail === 'profiles' ? (
-          /* Profiles panel — the working comes next (aap batayenge kya karna hai) */
-          <div className="side-scroll">
-            <div className="nav-sec">Profiles</div>
-            <p className="muted" style={{ padding: '4px 10px' }}>
-              🧩 Profiles ka system agla kaam hai — listing templates (price, shipping,
-              variations, details ek bar save kar ke har nayi listing par lagana).
-            </p>
-          </div>
+          <ProfilesPanel />
         ) : (
         <div className="side-scroll">
           {/* Status — Etsy listings by state */}

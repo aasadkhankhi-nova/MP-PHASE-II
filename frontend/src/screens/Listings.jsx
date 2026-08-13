@@ -17,6 +17,9 @@ import { dnumLabel } from '../store/helpers.js'
 import { desDnum, runGeneration } from '../store/compose.js'
 import { uid } from '../store/helpers.js'
 import { genSeo, getGeminiKey, etsy } from '../api.js'
+import { getProfiles } from '../store/profiles.js'
+import { makeSlideshowVideo } from '../store/video.js'
+import NewListing from './NewListing.jsx'
 
 export default function Listings() {
   const app = useApp()
@@ -67,7 +70,11 @@ export default function Listings() {
 function ListingWizard({ L, onBack }) {
   const app = useApp()
   const [prog, setProg] = useState(null)   // generation progress {i, n, name}
+  const [finalOpen, setFinalOpen] = useState(false)   // 📝 final check page
+  const profiles = getProfiles()
   const set = (patch) => app.updListing(L.id, patch)
+
+  if (finalOpen) return <NewListing L={L} onBack={() => setFinalOpen(false)} onSaved={(patch) => set(patch)} />
 
   // toggle helpers for the pick-grids
   const togDesign = (id) =>
@@ -108,6 +115,13 @@ function ListingWizard({ L, onBack }) {
     } else {
       seoErr = 'API key nahi mili — Settings (apne naam par click) me Gemini key dalein, phir dobara Create listing dabayein.'
     }
+    // --- part 3: MP4 slideshow video (Phase I wala system) ---
+    try {
+      setProg({ label: '🎬 video ban rahi hai…' })
+      const vid = await makeSlideshowVideo((r.outputs || []).slice(0, 6).map((o) => o.dataUrl))
+      if (vid) await set({ video: vid })
+    } catch {}
+
     await set({ seoErr })
     setProg(null)
   }
@@ -120,8 +134,8 @@ function ListingWizard({ L, onBack }) {
           <button className="btn sm ghost" onClick={onBack}>← Back</button>
         </div>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input placeholder="Category (e.g. Canvas Wall Art)" value={L.category} onChange={(e) => set({ category: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
-          <input placeholder="Keywords (optional)" value={L.keywords} onChange={(e) => set({ keywords: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+          <input placeholder="Title hint (e.g. Tshirt, Sweatshirt…)" value={L.category} onChange={(e) => set({ category: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+          <input placeholder="Tag hint (optional keywords)" value={L.keywords} onChange={(e) => set({ keywords: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
         </div>
       </div>
 
@@ -164,14 +178,25 @@ function ListingWizard({ L, onBack }) {
         {!app.ws.mockups.length && <Empty>Pehle Mockups screen par photos upload karein.</Empty>}
       </div>
 
-      {/* STEP 3: the one big button — photos + SEO together */}
+      {/* STEP 3: PROFILE — details/price/variations/shipping sab isse aayega */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>3 · Create listing</h3>
-        <p className="muted">Ye button sab kuch karega: {L.mockupIds.length} product photos + Etsy SEO (title, tags, description, ALT).</p>
+        <h3 style={{ marginTop: 0 }}>3 · Profile <span className="chip">{L.profileId && profiles.find((x) => x.id === L.profileId) ? '✓ ' + profiles.find((x) => x.id === L.profileId).name : 'chunein'}</span></h3>
+        <p className="muted" style={{ fontSize: 13 }}>Profile se aayega: materials, Details (category/attributes), price, variations, shipping, aur description ka doosra hissa. (SKU aakhri page par aap khud dalenge.)</p>
+        <select value={L.profileId || ''} onChange={(e) => set({ profileId: e.target.value })} style={{ minWidth: 240 }}>
+          <option value="">⊞ Choose Profile</option>
+          {profiles.map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}
+        </select>
+        {!profiles.length && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Abhi koi profile nahi — kisi Etsy listing ke edit page par ⊞ Save as Profile se banayein.</p>}
+      </div>
+
+      {/* STEP 4: the one big button — photos + SEO + video together */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>4 · Generate</h3>
+        <p className="muted">Ye button sab karega: {L.mockupIds.length} product photos + AI SEO (title, tags, 300-char description, ALT) + MP4 video.</p>
         {prog ? (
           <p className="muted">⏳ {prog.label}</p>
         ) : (
-          <button className="btn" onClick={createListing}>🧾 Create listing</button>
+          <button className="btn" onClick={createListing}>🚀 Generate (photos + SEO + video)</button>
         )}
         {L.report && L.report.missed.length > 0 && (
           <p className="muted" style={{ color: 'var(--warn)', marginTop: 10 }}>
@@ -192,9 +217,16 @@ function ListingWizard({ L, onBack }) {
         </div>
       )}
 
-      {/* Send to Etsy — appears once photos are generated. Creates a DRAFT
-          on the connected Etsy shop; the seller publishes it on Etsy. */}
-      {L.outputs?.length > 0 && <EtsyPublish L={L} onSaved={(patch) => set(patch)} />}
+      {/* FINAL page — photos/video/SEO + profile + SKU, aur wahan ka Publish
+          hi Etsy par bhejta hai (draft ya active). Us se pehle kuch nahi jata. */}
+      {L.outputs?.length > 0 && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>5 · Final check & Publish</h3>
+          <p className="muted">Photos, video, SEO aur profile sab ek page par check karein, SKU dalein, phir ⇧ Publish (Active ya Draft). <b>Publish se pehle Etsy par kuch nahi jata.</b></p>
+          <button className="btn" onClick={() => setFinalOpen(true)}>📝 Final page kholein</button>
+          {L.etsy?.url && <p className="muted" style={{ marginTop: 8 }}>🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par listing dekhein</a></p>}
+        </div>
+      )}
 
       {/* eslint-disable-next-line */}
       {/* results of this listing (Results screen shows all listings together) */}
