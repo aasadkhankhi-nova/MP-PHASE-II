@@ -75,13 +75,15 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
     return [...r].sort(by)
   }, [es.idx, filt, q, sort, lpIds])
 
+  // Clicking a listing goes STRAIGHT to the edit page (Vela-style) —
+  // no read-only detail page in between.
   const open = async (id) => {
-    setOpenId(id); setDetail(null); setEdit(false)
+    setOpenId(id); setDetail(null); setEdit(true)
     try { const r = await etsy.listing(storeId, id); setDetail(r.listing) }
     catch (e) { setErr(e.message); setOpenId(null) }
   }
   const reload = async () => {
-    setEdit(false); setDetail(null)
+    setDetail(null)                                   // stay in edit mode after save
     try { const r = await etsy.listing(storeId, openId); setDetail(r.listing) } catch {}
   }
   const doDelete = async () => {
@@ -112,13 +114,13 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
           <div className="topbar" style={{ margin: 0 }}>
             <b className="ellip">{detail ? detail.title : '⏳ loading…'}</b>
             <span style={{ display: 'flex', gap: 6 }}>
-              {detail && !edit && <button className="btn sm" onClick={() => setEdit(true)}>✏️ Edit</button>}
-              {detail && !edit && <button className="btn sm danger" onClick={doDelete}>🗑</button>}
+              {detail && <button className="btn sm danger" title="Delete listing" onClick={doDelete}>🗑</button>}
               <button className="btn sm ghost" onClick={() => { setOpenId(null); setDetail(null); setEdit(false) }}>← Back</button>
             </span>
           </div>
         </div>
-        {detail && edit && <EtsyEdit storeId={storeId} detail={detail} onDone={reload} onCancel={() => setEdit(false)} />}
+        {!detail && <div className="card"><p className="muted">⏳ listing load ho rahi hai…</p></div>}
+        {detail && edit && <EtsyEdit storeId={storeId} detail={detail} onDone={reload} onCancel={() => { setOpenId(null); setDetail(null); setEdit(false) }} />}
         {detail && !edit && (
           <>
             <div className="card">
