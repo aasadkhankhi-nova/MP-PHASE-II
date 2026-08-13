@@ -792,6 +792,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
   const upd = (i, patch) => setRows(rows.map((r, x) => (x === i ? { ...r, ...patch } : r)))
   const priceVaries = (inv?.priceOnProperty || []).length > 0
   const qtyVaries = (inv?.quantityOnProperty || []).length > 0
+  const skuVaries = (inv?.skuOnProperty || []).length > 0
 
   // bulk helpers: set every row's price/qty in one go
   const applyBulk = () => {
@@ -812,6 +813,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
       let out = rows
       if (!priceVaries) out = out.map((r) => ({ ...r, price: rows[0].price }))
       if (!qtyVaries) out = out.map((r) => ({ ...r, quantity: rows[0].quantity }))
+      if (!skuVaries) out = out.map((r) => ({ ...r, sku: rows[0].sku }))
       await etsy.saveInventory(storeId, listingId, {
         priceOnProperty: inv.priceOnProperty,
         quantityOnProperty: inv.quantityOnProperty,
@@ -825,6 +827,58 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
   }
 
   if (!inv) return <div className="card"><p className="muted">{msg || '⏳ Variations load ho rahi hain…'}</p></div>
+
+  // ---- PRICE tab — Etsy/Vela jaisa: ek field; variation-wise ho to
+  //      "Defined by Variation" (grey, disabled) ----
+  if (mode === 'price') {
+    return (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Price</h3>
+        <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price{priceVaries ? '' : ` (${currency})`}</label>
+        {priceVaries ? (
+          <>
+            <input disabled placeholder="Defined by Variation" style={{ minWidth: 230, background: '#f4f6fa' }} />
+            <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Har variation ki apni price hai — <b>Variations</b> tab me edit hoti hai.</p>
+          </>
+        ) : (
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
+            <input type="number" min="0.2" step="0.01" value={rows[0]?.price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 140 }} />
+            <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
+          </div>
+        )}
+        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      </div>
+    )
+  }
+
+  // ---- INVENTORY tab — Etsy/Vela jaisa: Quantity + SKU (Optional);
+  //      jo cheez variation-wise ho wo "Defined by Variation" ----
+  if (mode === 'qty') {
+    return (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>Inventory</h3>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Quantity</label>
+            {qtyVaries
+              ? <input disabled placeholder="Defined by Variation" style={{ minWidth: 200, background: '#f4f6fa' }} />
+              : <input type="number" min="0" value={rows[0]?.quantity ?? ''} onChange={(e) => upd(0, { quantity: e.target.value })} style={{ width: 140 }} />}
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU <span className="opt">Optional</span></label>
+            {skuVaries
+              ? <input disabled placeholder="Defined by Variation" style={{ minWidth: 200, background: '#f4f6fa' }} />
+              : <input value={rows[0]?.sku || ''} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 220 }} />}
+          </span>
+          {(!qtyVaries || !skuVaries) && <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>}
+        </div>
+        {(qtyVaries || skuVaries) && (
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Variation-wise values <b>Variations</b> tab me edit hoti hain.</p>
+        )}
+        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      </div>
+    )
+  }
 
   // simple listing (no variations): one price + one quantity
   if (rows.length === 1 && !rows[0].propertyValues.length) {
