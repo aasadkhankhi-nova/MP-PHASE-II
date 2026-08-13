@@ -33,7 +33,7 @@ function ago(t) {
   return `${Math.round(m / 60)}h ago`
 }
 
-export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCreate }) {
+export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCreate, onEditing }) {
   const app = useApp()
   const storeId = app.curStoreId
   const [sort, setSort] = useState('exp_late')
@@ -48,6 +48,12 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
 
   // jump back to page 1 + clear selection whenever the filters/status change
   useEffect(() => { setPage(0); setSel(new Set()) }, [state, filt])
+
+  // edit page khula ho to App ko batao — left sidebar chhup jata hai (Vela jaisa)
+  useEffect(() => {
+    onEditing && onEditing(!!openId)
+    return () => { onEditing && onEditing(false) }
+  }, [openId])
 
   // ListPilot-made listings (for the 🚀 Launchpad filter)
   const lpIds = useMemo(() => new Set(
@@ -111,15 +117,6 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
   if (openId) {
     return (
       <>
-        <div className="card">
-          <div className="topbar" style={{ margin: 0 }}>
-            <b className="ellip">{detail ? detail.title : '⏳ loading…'}</b>
-            <span style={{ display: 'flex', gap: 6 }}>
-              {detail && <button className="btn sm danger" title="Delete listing" onClick={doDelete}>🗑</button>}
-              <button className="btn sm ghost" onClick={() => { setOpenId(null); setDetail(null); setEdit(false) }}>← Back</button>
-            </span>
-          </div>
-        </div>
         {!detail && <div className="card"><p className="muted">⏳ listing load ho rahi hai…</p></div>}
         {detail && edit && <EtsyEdit storeId={storeId} detail={detail} shopName={es.shopName} onDone={reload} onCancel={() => { setOpenId(null); setDetail(null); setEdit(false) }} />}
         {detail && !edit && (
@@ -502,18 +499,35 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
-  // Publish ▾ — Active (live) ya Draft (hidden) — store ke naam ke saath
-  const setStateTo = async (st) => {
+  // Children (photos/inventory/personalization) apni save-functions yahan
+  // register karti hain — Publish EK bar me SAB kuch Etsy par bhejta hai.
+  const reg = React.useRef({})
+
+  // Publish ▾ — Vela jaisa: sab changes save + Active/Draft state
+  const publishTo = async (target) => {
     setPubMenu(false)
-    const warn = st === 'active'
-      ? 'Listing LIVE (Active) ho jayegi — nayi listing par Etsy $0.20 fee leta hai. Continue?'
-      : 'Listing buyers se chhup jayegi (Draft / Inactive). Continue?'
-    if (!confirm(warn)) return
-    setBusy(true); setMsg(null)
+    const blocking = Object.values(errs).filter(Boolean)
+    if (blocking.length) { setMsg('⚠ Pehle RED errors theek karein: ' + blocking.join(' · ')); return }
+    const changing = (target === 'active') !== (detail.state === 'active')
+    if (changing && target === 'active' && !confirm('Sab changes save ho kar listing LIVE (Active) ho jayegi. Continue?')) return
+    if (changing && target === 'inactive' && !confirm('Sab changes save ho kar listing buyers se chhup jayegi (Draft). Continue?')) return
+    setBusy(true); setMsg('⏳ sab kuch Etsy par ja raha hai…')
     try {
-      await etsy.setState(storeId, detail.id, st)
-      setMsg(st === 'active' ? '🚀 Listing LIVE ho gayi!' : '📝 Listing draft (inactive) ho gayi')
+      await saveMainPatch()                                       // title/desc/tags/details/shipping/attributes
+      for (const k of Object.keys(reg.current)) await reg.current[k]()   // photos order / variations / personalization
+      if (changing) await etsy.setState(storeId, detail.id, target)
+      setMsg(changing && target === 'active' ? '🚀 Save + listing LIVE ho gayi!' : changing ? '📝 Save + listing draft ho gayi' : '✅ Sab kuch Etsy par save ho gaya')
       setTimeout(onDone, 900)
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
+
+  // ⧉ Copy — puri listing ki nakal naye DRAFT ke tor par (photos + variations sab)
+  const doCopy = async () => {
+    if (!confirm('Is listing ki COPY (naya draft) Etsy par banegi — photos, variations, sab kuch. Continue?')) return
+    setBusy(true); setMsg('⏳ copy ban rahi hai (photos dobara chadhti hain — 1-2 minute)…')
+    try {
+      const r = await etsy.copyListing(storeId, detail.id)
+      setMsg(`✅ Copy ban gayi (draft, ${r.photos} photos) — ⟳ Refresh ke baad Draft filter me milegi`)
     } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
   // profiles: Profiles section me jo profiles banengi wo yahan aayengi
@@ -571,12 +585,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     setMats([...mats, t]); setMatIn(''); setMsg(null)
   }
 
-  const save = async () => {
-    // RED errors ke saath save NAHI hota — Etsy waise bhi reject kar dega
-    const blocking = Object.values(errs).filter(Boolean)
-    if (blocking.length) { setMsg('⚠ Pehle RED errors theek karein: ' + blocking.join(' · ')); return }
-    setBusy(true); setMsg(null)
-    try {
+  const saveMainPatch = async () => {
       // 1) main fields — send only what actually changed
       const patch = {}
       if (title !== detail.title) patch.title = title
@@ -616,12 +625,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
         propChanges++
       }
 
-      if (!Object.keys(patch).length && !propChanges) { setMsg('Kuch badla hi nahi 🙂'); setBusy(false); return }
-      setMsg('✅ Etsy par save ho gaya')
-      setTimeout(onDone, 700)   // reload the fresh listing
-    } catch (e) {
-      setMsg('⚠ ' + (e.message || e))
-    } finally { setBusy(false) }
   }
 
   // "made_to_order" -> "Made to order", "2020_2026" -> "2020 - 2026"
@@ -671,7 +674,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
 
       {/* ---- SAB sections EK page par (scroll) — tab click = us section par jump ---- */}
       <div id="esec-photos" className="esec">
-        <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} />
+        <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} reg={reg} />
       </div>
       <div id="esec-video" className="esec">
         <VideoEditor storeId={storeId} listingId={detail.id} initial={detail.video} />
@@ -892,12 +895,12 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
 
       {/* ---- Price / Inventory / Variations — teeno sections (ek hi LIVE inventory se) ---- */}
       <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
-        mode="all" onCount={setVarCount} images={detail.images || []} />
+        mode="all" onCount={setVarCount} images={detail.images || []} reg={reg} />
 
       {/* ---- Personalization — Etsy ka NAYA system: 5 questions tak,
            Text box / Dropdown / PHOTO-UPLOAD / Labeled upload + Add-on price ---- */}
       <div id="esec-personalization" className="esec">
-        <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} />
+        <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} reg={reg} />
       </div>
 
       {/* ---- Shipping — Vela/Etsy jaisa: Processing profile, Shipping profile,
@@ -987,16 +990,24 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
           <span style={{ color: '#f1641e', fontWeight: 800 }}>E</span> View on Etsy
         </a>
         <button className="btn ghost" disabled={busy} onClick={() => setMsg('⊞ Save as Profile — Profiles system jald aa raha hai')}>⊞ Save as Profile</button>
-        <button className="btn ghost" disabled={busy} onClick={() => setMsg('⧉ Copy listing jald aa raha hai')}>⧉ Copy</button>
-        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save'}</button>
+        <button className="btn ghost" disabled={busy} onClick={doCopy}>⧉ Copy</button>
         <div className="pub-wrap">
-          <button className="btn" disabled={busy} onClick={() => setPubMenu(!pubMenu)}>⇧ Publish ⌄</button>
+          <button className="btn" disabled={busy} onClick={() => setPubMenu(!pubMenu)}>{busy ? '⏳…' : '⇧ Publish  ⌄'}</button>
           {pubMenu && (
             <>
               <div className="menu-veil" onClick={() => setPubMenu(false)} />
               <div className="pub-menu">
-                <button onClick={() => setStateTo('active')}>🟢 Active — {shopName || 'Etsy shop'}{detail.state === 'active' ? ' ✓' : ''}</button>
-                <button onClick={() => setStateTo('inactive')}>📝 Draft — {shopName || 'Etsy shop'}{detail.state !== 'active' ? ' ✓' : ''}</button>
+                <div className="pub-head"><span className="etsy-badge pub-badge">E</span> {shopName || 'Etsy shop'}</div>
+                <button className="pub-row" onClick={() => publishTo('active')}>
+                  <span className="pub-ic">🟢</span>
+                  <span className="pub-txt"><b>Active</b><small>Sab changes save + listing LIVE</small></span>
+                  {detail.state === 'active' && <span className="pub-check">✓</span>}
+                </button>
+                <button className="pub-row" onClick={() => publishTo('inactive')}>
+                  <span className="pub-ic">📝</span>
+                  <span className="pub-txt"><b>Draft</b><small>Sab changes save + buyers se hidden</small></span>
+                  {detail.state !== 'active' && <span className="pub-check">✓</span>}
+                </button>
               </div>
             </>
           )}
@@ -1021,7 +1032,7 @@ const QTYPES = [
   ['unlabeled_upload', 'Photo / file upload'],
   ['labeled_upload', 'Labeled upload (har file ka apna naam)'],
 ]
-function PersonalizationEditor({ storeId, listingId, onErr }) {
+function PersonalizationEditor({ storeId, listingId, onErr, reg }) {
   const [qs, setQs] = useState(null)      // null = loading
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -1032,11 +1043,13 @@ function PersonalizationEditor({ storeId, listingId, onErr }) {
       .catch((e) => { setQs([]); setMsg('⚠ ' + e.message) })
   }, [storeId, listingId])
 
-  const upd = (i, patch) => setQs(qs.map((q, x) => (x === i ? { ...q, ...patch } : q)))
-  const del = (i) => setQs(qs.filter((_, x) => x !== i))
+  const [dirty, setDirty] = useState(false)
+  const upd = (i, patch) => { setQs(qs.map((q, x) => (x === i ? { ...q, ...patch } : q))); setDirty(true) }
+  const del = (i) => { setQs(qs.filter((_, x) => x !== i)); setDirty(true) }
   const add = (type) => {
     if (!type || qs.length >= 5) return
     setQs([...qs, { id: null, type, text: 'Personalization', instructions: '', required: false, maxChars: type === 'text_input' ? 256 : null, maxFiles: type.includes('upload') ? 1 : null, addOnPrice: null, options: [], labels: type === 'labeled_upload' ? [''] : [] }])
+    setDirty(true)
   }
 
   // Etsy ke rules — har question ke errors ki list
@@ -1073,15 +1086,18 @@ function PersonalizationEditor({ storeId, listingId, onErr }) {
   const allErrs = (qs || []).flatMap(qErrs)
   useEffect(() => { onErr && onErr(allErrs.length > 0) }, [allErrs.length])
 
-  const save = async () => {
-    if (allErrs.length) return setMsg('⚠ Pehle RED errors theek karein')
-    setBusy(true); setMsg(null)
-    try {
+  // Publish ke waqt save hota hai (agar kuch badla ho) — parent register karta hai
+  useEffect(() => {
+    if (!reg) return
+    reg.current.personalization = async () => {
+      if (!dirty) return
+      if (allErrs.length) throw new Error('Personalization me RED errors hain')
       if (!qs.length) await etsy.update(storeId, listingId, { personalizable: false })
       else await etsy.savePersonalization(storeId, listingId, qs)
-      setMsg('✅ Personalization Etsy par save ho gayi')
-    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
-  }
+      setDirty(false)
+    }
+    return () => { if (reg) delete reg.current.personalization }
+  })
 
   if (qs === null) return <div className="card"><p className="muted">⏳ personalization load ho rahi hai…</p></div>
 
@@ -1200,10 +1216,7 @@ function PersonalizationEditor({ storeId, listingId, onErr }) {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save personalization'}</button>
-        {qs.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Koi question nahi = Save par personalization OFF ho jayegi</span>}
-      </div>
+      {dirty && <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>✎ Changes hue hain — neeche <b>Publish</b> dabane par Etsy par jayenge.{qs.length === 0 ? ' (Koi question nahi = personalization OFF)' : ''}</p>}
       {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
@@ -1219,7 +1232,7 @@ function PersonalizationEditor({ storeId, listingId, onErr }) {
  */
 // mode: 'price' (sirf price), 'qty' (quantity+SKU), 'full' (sab kuch — Variations tab)
 // onCount(n) — parent ko combos ki tadaad batata hai (399 se zyada = red dot warning)
-function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount, images = [] }) {
+function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount, images = [], reg }) {
   const showPrice = mode === 'price' || mode === 'full'
   const showQty = mode === 'qty' || mode === 'full'
   const TITLE = mode === 'price' ? '💲 Price' : mode === 'qty' ? '📦 Inventory' : '🧩 Variations'
@@ -1272,7 +1285,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
   }, [rows])
   useEffect(() => { if (photoProp === null && plist.length) setPhotoProp(plist[0].id) }, [plist, photoProp])
 
-  const upd = (i, patch) => setRows(rows.map((r, x) => (x === i ? { ...r, ...patch } : r)))
+  const upd = (i, patch) => { setRows(rows.map((r, x) => (x === i ? { ...r, ...patch } : r))); setVDirty(true) }
   const priceVaries = (inv?.priceOnProperty || []).length > 0
   const qtyVaries = (inv?.quantityOnProperty || []).length > 0
   const skuVaries = (inv?.skuOnProperty || []).length > 0
@@ -1325,7 +1338,6 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
         ) : (
           <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 4 }}>
             <input type="number" min="0.2" step="0.01" value={rows[0]?.price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 140 }} />
-            <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
           </div>
         )}
         {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
@@ -1350,7 +1362,6 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
               ? <input disabled placeholder="Defined by Variation" style={{ minWidth: 200, background: '#f4f6fa' }} />
               : <input value={rows[0]?.sku || ''} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 220 }} />}
           </span>
-          {(!qtyVaries || !skuVaries) && <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>}
         </div>
         {(qtyVaries || skuVaries) && (
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Variation-wise values <b>Variations</b> tab me edit hoti hain.</p>
@@ -1379,7 +1390,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
     const left = rows.filter((r) => !(r.propertyValues || []).some((pv) => pv.property_id === P.id && (pv.values || []).join(', ') === value))
     if (!left.length) return setMsg('⚠ Aakhri combo delete nahi ho sakta')
     setRows(left); setVDirty(true)
-    setMsg('🗑 Option hata — 💾 Save variations dabane par Etsy par jayega')
+    setMsg('🗑 Option hata — neeche Publish dabane par Etsy par jayega')
   }
 
   // option ADD: baqi properties ke har combo ke saath naya product ban jata hai
@@ -1398,30 +1409,31 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
     }
     if (rows.length + add.length > 400) return setMsg('⚠ Should not exceed 400 options combinations')
     setRows([...rows, ...add]); setAddIn({ ...addIn, [P.id]: '' }); setVDirty(true)
-    setMsg(`＋ "${name}" add hua (${add.length} naye combos) — 💾 Save variations dabayein`)
+    setMsg(`＋ "${name}" add hua (${add.length} naye combos) — neeche Publish dabayein`)
   }
 
-  // EK Save: structure + price + quantity + SKU + visibility (replace-all on Etsy)
-  const saveAll = async () => {
-    setBusy(true); setMsg(null)
-    try {
-      // normalize: jo cheez Individual NAHI hai wo apne group ki EK value share kare
-      const out = rows.map((r) => ({ ...r }))
-      const norm = (field, onIds) => {
-        const m = new Map()
-        out.forEach((r) => {
-          const key = (r.propertyValues || []).filter((pv) => onIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
-          if (!m.has(key)) m.set(key, r[field])
-          r[field] = m.get(key)
-        })
-      }
-      norm('price', pOn); norm('quantity', qOn); norm('sku', sOn)
-      for (const r of out) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho')
-      await etsy.saveInventory(storeId, listingId, { priceOnProperty: pOn, quantityOnProperty: qOn, skuOnProperty: sOn, products: out })
-      setVDirty(false)
-      setMsg('✅ Variations Etsy par save ho gayin')
-    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  // Publish ke waqt inventory push hota hai (agar kuch badla ho) — replace-all on Etsy
+  const pushInventory = async () => {
+    // normalize: jo cheez Individual NAHI hai wo apne group ki EK value share kare
+    const out = rows.map((r) => ({ ...r }))
+    const norm = (field, onIds) => {
+      const m = new Map()
+      out.forEach((r) => {
+        const key = (r.propertyValues || []).filter((pv) => onIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
+        if (!m.has(key)) m.set(key, r[field])
+        r[field] = m.get(key)
+      })
+    }
+    norm('price', pOn); norm('quantity', qOn); norm('sku', sOn)
+    for (const r of out) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho (Price/Variations section)')
+    await etsy.saveInventory(storeId, listingId, { priceOnProperty: pOn, quantityOnProperty: qOn, skuOnProperty: sOn, products: out })
+    setVDirty(false)
   }
+  useEffect(() => {
+    if (!reg) return
+    reg.current.inventory = async () => { if (vDirty) await pushInventory() }
+    return () => { if (reg) delete reg.current.inventory }
+  })
 
   // variation-photo link set/clear (sirf screen par — Save photos se Etsy par jata hai)
   const setLink = (valueId, imageId) => {
@@ -1546,7 +1558,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
             return (
               <div key={o.value} className="vrow" style={{ alignItems: 'center' }}>
                 <span className="ellip" style={{ width: 150, fontWeight: 600 }}>{o.value}</span>
-                {!o.valueId && <span className="muted" style={{ fontSize: 12 }}>naya option — pehle 💾 Save variations karein, phir photo lag sakegi</span>}
+                {!o.valueId && <span className="muted" style={{ fontSize: 12 }}>naya option — pehle Publish karein, phir photo lag sakegi</span>}
                 {o.valueId && (
                   <span className="vphotos">
                     {(images || []).map((im) => (
@@ -1573,13 +1585,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
         </p>
       )}
 
-      {/* footer: EK Save — structure + price + quantity + SKU + visibility */}
-      {vtab !== 'photos' && vtab !== 'proc' && (
-        <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-          <button className="btn" disabled={busy} onClick={saveAll}>{busy ? '⏳ Saving…' : '💾 Save variations'}</button>
-          {vDirty && <span className="muted" style={{ fontSize: 12 }}>⚠ Changes abhi sirf yahan hain — Save dabane par Etsy par jayenge.</span>}
-        </div>
-      )}
+      {vDirty && <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>✎ Changes hue hain — neeche <b>Publish</b> dabane par Etsy par jayenge.</p>}
       {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
@@ -1603,7 +1609,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
  * - aakhir me EK hi Upload box — jab tak 20 puri na hon
  */
 const MAX_PHOTOS = 20
-function PhotosEditor({ storeId, listingId, initial }) {
+function PhotosEditor({ storeId, listingId, initial, reg }) {
   const [imgs, setImgs] = useState(initial)   // [{id, url, full, alt}]
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
@@ -1630,14 +1636,19 @@ function PhotosEditor({ storeId, listingId, initial }) {
     const [m] = a.splice(from, 1)
     a.splice(to, 0, m)
     setImgs(a); setDirty(true)
-    setMsg('✎ Order badla hai — neeche 💾 Save order dabayenge tab Etsy par jayega')
+    setMsg('✎ Order badla — neeche Publish dabane par Etsy par jayega')
   }
 
-  const saveOrder = async () => {
-    setBusy(true); setMsg('⏳ order Etsy par save ho raha hai…')
-    try { await etsy.orderImages(storeId, listingId, imgs.map((x) => x.id)); setDirty(false); setMsg('✅ Order Etsy par save ho gaya') }
-    catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
-  }
+  // Publish ke waqt order save (agar badla ho) — parent register karta hai
+  useEffect(() => {
+    if (!reg) return
+    reg.current.photos = async () => {
+      if (!dirty) return
+      await etsy.orderImages(storeId, listingId, imgs.map((x) => x.id))
+      setDirty(false)
+    }
+    return () => { if (reg) delete reg.current.photos }
+  })
 
   const del = async (im) => {
     setMenu(null)
@@ -1768,13 +1779,7 @@ function PhotosEditor({ storeId, listingId, initial }) {
       {/* Replace ke liye chhupa input */}
       <input ref={repRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { replace(e.target.files[0]); e.target.value = '' }} />
 
-      {/* order badla ho to user KHUD save kare — tabhi Etsy par jata hai */}
-      {dirty && (
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
-          <button className="btn" disabled={busy} onClick={saveOrder}>{busy ? '⏳ Saving…' : '💾 Save order'}</button>
-          <span className="muted" style={{ fontSize: 12 }}>⚠ Naya order abhi sirf yahan hai — Etsy par save nahi hua.</span>
-        </div>
-      )}
+      {dirty && <p className="muted" style={{ marginTop: 10, fontSize: 12 }}>✎ Naya order — neeche <b>Publish</b> dabane par Etsy par jayega.</p>}
 
       {/* alt text editor */}
       {altFor && (

@@ -139,6 +139,8 @@ function Placeholder({ title }) {
 }
 
 function Shell() {
+  // edit page khula ho to left FILTER SIDEBAR chhup jata hai (Vela jaisa full-width edit)
+  const [editFull, setEditFull] = useState(false)
   const app = useApp()
   const [screen, setScreen] = useState('etsystore')     // Etsy Store is home now
   const [rail, setRail] = useState('listings')          // icon rail: which PANEL shows (listings | profiles)
@@ -245,7 +247,7 @@ function Shell() {
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
-    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} /> :
+    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} onEditing={setEditFull} /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
 
@@ -278,8 +280,8 @@ function Shell() {
         )}
       </nav>
 
-      {/* ==================== PANEL (second sidebar) ==================== */}
-      <aside className="sidebar">
+      {/* ==================== PANEL (second sidebar) — edit page par hidden ==================== */}
+      {!editFull && <aside className="sidebar">
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
         {rail === 'profiles' ? (
@@ -382,7 +384,7 @@ function Shell() {
           )}
           <button className="add-shop-btn" onClick={addShopBottom}>＋ Add shop</button>
         </div>
-      </aside>
+      </aside>}
 
       <main className="main">
         <div className="topbar">

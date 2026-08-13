@@ -93,19 +93,29 @@ async function getConn(storeId) {
 }
 
 // One call to Etsy's API with the right headers. Throws on error.
+// Etsy ki had 5 requests/second hai — edit page ke sab sections ek saath load
+// hone par 429 aa sakta hai, is liye 429 par ruk kar KHUD retry karte hain.
 async function etsy(conn, path, opts = {}) {
-  const res = await fetch('https://api.etsy.com/v3/application' + path, {
-    ...opts,
-    headers: {
-      'x-api-key': apiKeyHdr(),
-      authorization: `Bearer ${conn.access_token}`,
-      ...(typeof opts.body === 'string' ? { 'content-type': 'application/json' } : {}),
-      ...(opts.headers || {}),
-    },
-  })
-  const j = await res.json().catch(() => ({}))
-  if (!res.ok) throw Object.assign(new Error(j.error || `Etsy HTTP ${res.status}`), { status: res.status })
-  return j
+  let j = {}
+  for (let att = 0; att < 4; att++) {
+    const res = await fetch('https://api.etsy.com/v3/application' + path, {
+      ...opts,
+      headers: {
+        'x-api-key': apiKeyHdr(),
+        authorization: `Bearer ${conn.access_token}`,
+        ...(typeof opts.body === 'string' ? { 'content-type': 'application/json' } : {}),
+        ...(opts.headers || {}),
+      },
+    })
+    if (res.status === 429) {                       // rate limit — thora ruk kar dobara
+      await new Promise((r) => setTimeout(r, 1100 + att * 900))
+      continue
+    }
+    j = await res.json().catch(() => ({}))
+    if (!res.ok) throw Object.assign(new Error(j.error || `Etsy HTTP ${res.status}`), { status: res.status })
+    return j
+  }
+  throw Object.assign(new Error('Etsy rate limit — page refresh kar ke dobara koshish karein'), { status: 429 })
 }
 
 // Build a form-encoded body the way Etsy's write endpoints expect:
@@ -333,12 +343,17 @@ router.get('/readiness', requireUser, async (req, res) => {
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/readiness-state-definitions`)
     const list = r.results || r.readiness_state_definitions || []
+    // "made_to_order" -> "Made to order: 1–2 days" (Etsy/Vela jaisa label)
+    const pretty = (x) => {
+      const base = String(x.readiness_state || x.description || 'Processing').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
+      const range = x.min_processing_time ? `: ${x.min_processing_time}–${x.max_processing_time} ${x.processing_time_unit || 'days'}` : ''
+      return base + range
+    }
     res.json({
       ok: true,
       states: list.map((x) => ({
         id: x.readiness_state_definition_id || x.readiness_state_id || x.id,
-        label: x.description || x.readiness_state ||
-          (x.min_processing_time ? `${x.min_processing_time}–${x.max_processing_time} ${x.processing_time_unit || 'days'}` : `Profile ${x.readiness_state_definition_id || x.id}`),
+        label: pretty(x),
       })).filter((x) => x.id),
     })
   } catch (e) {
@@ -767,6 +782,100 @@ router.post('/inventory/update', requireUser, async (req, res) => {
     // inventory endpoint speaks JSON (string body -> our helper sets the JSON header)
     await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`, { method: 'PUT', body: JSON.stringify(body) })
     res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/copy { storeId, id }
+// Vela jaisa COPY: listing ki puri nakal ek naye DRAFT ke tor par —
+// fields + photos (CDN se utha kar dobara upload) + variations + personalization.
+router.post('/listing/copy', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+
+    const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
+    // 1) naya draft — core fields ke saath
+    const draft = {
+      quantity: l.quantity || 1,
+      title: l.title,
+      description: l.description || l.title,
+      price: money(l.price) || 1,
+      who_made: l.who_made || 'i_did',
+      when_made: l.when_made || 'made_to_order',
+      taxonomy_id: l.taxonomy_id,
+      tags: l.tags || [],
+      materials: l.materials || [],
+    }
+    if (l.shipping_profile_id) draft.shipping_profile_id = l.shipping_profile_id
+    if (l.return_policy_id) draft.return_policy_id = l.return_policy_id
+    if (l.shop_section_id) draft.shop_section_id = l.shop_section_id
+    if (l.readiness_state_id) draft.readiness_state_id = l.readiness_state_id
+    if (l.is_supply) draft.is_supply = 'true'
+    const nl = await etsy(conn, `/shops/${conn.shop_id}/listings`, { method: 'POST', body: form(draft) })
+
+    // 2) photos: CDN se download kar ke naye draft par upload (order preserved)
+    let photos = 0
+    for (const im of (l.images || []).slice(0, 20)) {
+      try {
+        const src = im.url_fullxfull || im.url_570xN
+        if (!src) continue
+        const r2 = await fetch(src)
+        if (!r2.ok) continue
+        const buf = Buffer.from(await r2.arrayBuffer())
+        const fd = new FormData()
+        fd.append('image', new Blob([buf], { type: r2.headers.get('content-type') || 'image/jpeg' }), `photo-${photos + 1}.jpg`)
+        fd.append('rank', String(photos + 1))
+        if (im.alt_text) fd.append('alt_text', String(im.alt_text).slice(0, 500))
+        await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}/images`, { method: 'POST', body: fd })
+        photos++
+      } catch {}
+    }
+
+    // 3) variations (agar hain) — inventory ki nakal
+    try {
+      const inv = await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`)
+      const hasVars = (inv.products || []).length > 1 || (inv.products?.[0]?.property_values || []).length
+      if (hasVars) {
+        const prods = (inv.products || []).map((p) => ({
+          sku: p.sku || '',
+          property_values: (p.property_values || []).map((v) => ({
+            property_id: v.property_id, property_name: v.property_name,
+            value_ids: v.value_ids, values: v.values,
+            ...(v.scale_id ? { scale_id: v.scale_id } : {}),
+          })),
+          offerings: (p.offerings || []).slice(0, 1).map((o) => ({
+            price: o.price ? o.price.amount / (o.price.divisor || 100) : 1,
+            quantity: o.quantity || 0,
+            is_enabled: !!o.is_enabled,
+            ...(o.readiness_state_id ? { readiness_state_id: o.readiness_state_id } : {}),
+          })),
+        }))
+        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            products: prods,
+            price_on_property: inv.price_on_property || [],
+            quantity_on_property: inv.quantity_on_property || [],
+            sku_on_property: inv.sku_on_property || [],
+          }),
+        })
+      }
+    } catch {}
+
+    // 4) personalization ki nakal (naya multi-question system)
+    try {
+      const pr = await etsy(conn, `/listings/${encodeURIComponent(id)}/personalization`)
+      const qs = pr.personalization_questions || pr.results || []
+      if (qs.length) {
+        const body = { personalization_questions: qs.map((q) => { const o = { ...q }; delete o.question_id; return o }) }
+        await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}/personalization?supports_multiple_personalization_questions=true`, { method: 'POST', body: JSON.stringify(body) })
+      }
+    } catch {}
+
+    IDX_CACHE.clear && IDX_CACHE.clear()
+    res.json({ ok: true, id: nl.listing_id, photos })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 

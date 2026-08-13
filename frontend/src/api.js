@@ -205,6 +205,7 @@ export const etsy = {
   taxonomyTree: () => api('/api/etsy/taxonomy/tree'),
   varImages: (storeId, id) => api(`/api/etsy/varimages?storeId=${encodeURIComponent(storeId)}&id=${encodeURIComponent(id)}`),
   personalization: (storeId, id) => api(`/api/etsy/personalization?storeId=${encodeURIComponent(storeId)}&id=${encodeURIComponent(id)}`),
+  copyListing: (storeId, id) => api('/api/etsy/listing/copy', { method: 'POST', body: JSON.stringify({ storeId, id }) }),
   savePersonalization: (storeId, id, questions) => api('/api/etsy/personalization', { method: 'POST', body: JSON.stringify({ storeId, id, questions }) }),
   saveVarImages: (storeId, id, links) => api('/api/etsy/varimages', { method: 'POST', body: JSON.stringify({ storeId, id, links }) }),
   partners: (storeId) => api(`/api/etsy/partners?storeId=${encodeURIComponent(storeId)}`),
