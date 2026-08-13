@@ -314,6 +314,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [persMax, setPersMax] = useState(detail.personalization?.charMax || '')
   // ---- Vela-style tab bar ----
   const [tab, setTab] = useState('photos')
+  const [varCount, setVarCount] = useState(null)   // combos count (InventoryEditor batata hai)
   // profiles: Profiles section me jo profiles banengi wo yahan aayengi
   const profiles = useMemo(() => { try { return JSON.parse(localStorage.getItem('mp_profiles') || '[]') } catch { return [] } }, [])
   const [busy, setBusy] = useState(false)
@@ -400,7 +401,13 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     ['price', 'Price'], ['inventory', 'Inventory'], ['variations', 'Variations'],
     ['personalization', 'Personalization'], ['shipping', 'Shipping'],
   ]
-  const dots = { variations: !!detail.hasVariations, personalization: persOn }
+  // Red dot = Etsy ke rule ke KHILAF kuch hai (warning), warna koi dot nahi:
+  //  - Variations: Etsy max 399 combos accept karta hai (400+ reject)
+  //  - Personalization: instructions max 120 characters
+  const dots = {
+    variations: (varCount || 0) > 399,
+    personalization: persOn && persIns.length > 120,
+  }
 
   return (
     <>
@@ -487,7 +494,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
            par chalte hain (mounted rehta hai), bas columns badalte hain ---- */}
       <div style={{ display: ['price', 'inventory', 'variations'].includes(tab) ? '' : 'none' }}>
         <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
-          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} />
+          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} onCount={setVarCount} />
       </div>
 
       {/* ---- Personalization ---- */}
@@ -504,10 +511,13 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
                 <input type="checkbox" checked={persReq} onChange={(e) => setPersReq(e.target.checked)} />
                 Personalization REQUIRED ho (buyer ko likhna hi padega)
               </label>
-              <label className="muted" style={{ fontSize: 12 }}>Instructions for buyers</label>
+              <label className="muted" style={{ fontSize: 12 }}>
+                Instructions for buyers ({persIns.length}/120)
+                {persIns.length > 120 && <b style={{ color: 'var(--err)' }}> — Etsy sirf 120 characters accept karta hai!</b>}
+              </label>
               <textarea value={persIns} onChange={(e) => setPersIns(e.target.value)} rows={4}
                 placeholder="e.g. Enter the name you want printed…"
-                style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
+                style={{ width: '100%', border: '1px solid ' + (persIns.length > 120 ? 'var(--err)' : 'var(--line)'), borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
               <label className="muted" style={{ fontSize: 12, display: 'block' }}>Max characters (khali = Etsy default)</label>
               <input type="number" min="1" max="1024" value={persMax} onChange={(e) => setPersMax(e.target.value)} style={{ width: 120 }} />
             </>
@@ -619,7 +629,8 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
  * EXACTLY as it is on Etsy — we edit values, not the structure.
  */
 // mode: 'price' (sirf price), 'qty' (quantity+SKU), 'full' (sab kuch — Variations tab)
-function InventoryEditor({ storeId, listingId, currency, mode = 'full' }) {
+// onCount(n) — parent ko combos ki tadaad batata hai (399 se zyada = red dot warning)
+function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount }) {
   const showPrice = mode === 'price' || mode === 'full'
   const showQty = mode === 'qty' || mode === 'full'
   const TITLE = mode === 'price' ? '💲 Price' : mode === 'qty' ? '📦 Inventory' : '🧩 Variations'
@@ -633,7 +644,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full' }) {
   useEffect(() => {
     setInv(null); setMsg(null)
     etsy.inventory(storeId, listingId)
-      .then((r) => { setInv(r); setRows(r.products.map((p) => ({ ...p }))) })
+      .then((r) => { setInv(r); setRows(r.products.map((p) => ({ ...p }))); onCount && onCount(r.products.length) })
       .catch((e) => setMsg('⚠ ' + e.message))
   }, [storeId, listingId])
 
@@ -710,6 +721,11 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full' }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>{TITLE} <span className="chip">{rows.length} combos</span></h3>
+      {rows.length > 399 && (
+        <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>
+          ⚠ Etsy sirf 399 variations tak accept karta hai — abhi {rows.length} hain, kuch combos off/kam karein.
+        </p>
+      )}
       <p className="muted" style={{ fontSize: 12 }}>
         {showPrice && (priceVaries ? 'Price har combo ki alag hai.' : 'Price sab combos ki EK hai (Etsy ka rule — pehli row ki price sab par lagegi).')}
         {showQty && <> Quantity {qtyVaries ? 'har combo ki alag.' : 'sab ki ek.'}</>}
