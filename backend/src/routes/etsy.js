@@ -263,6 +263,31 @@ router.get('/taxonomy/tree', requireUser, async (req, res) => {
   catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// GET /api/etsy/readiness?storeId=...
+// Shop ke PROCESSING profiles (Etsy "readiness states" — e.g. Made to order: 1-2 days).
+// Ye Etsy par bante hain; API se sirf list milti hai (create ka endpoint nahi hai).
+router.get('/readiness', requireUser, async (req, res) => {
+  try {
+    const { storeId } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/readiness-state-definitions`)
+    const list = r.results || r.readiness_state_definitions || []
+    res.json({
+      ok: true,
+      states: list.map((x) => ({
+        id: x.readiness_state_definition_id || x.readiness_state_id || x.id,
+        label: x.description || x.readiness_state ||
+          (x.min_processing_time ? `${x.min_processing_time}–${x.max_processing_time} ${x.processing_time_unit || 'days'}` : `Profile ${x.readiness_state_definition_id || x.id}`),
+      })).filter((x) => x.id),
+    })
+  } catch (e) {
+    // purane shops par ye endpoint na ho to editor phir bhi chale
+    res.json({ ok: true, states: [] })
+  }
+})
+
 // GET /api/etsy/partners?storeId=...
 // Shop ke production partners (Etsy → Settings → Production partners wale).
 router.get('/partners', requireUser, async (req, res) => {
@@ -446,6 +471,13 @@ router.get('/listing', requireUser, async (req, res) => {
         isSupply: !!l.is_supply,                              // "What is it?" — supply ya finished product
         type: l.type || 'physical',                           // physical | download | both
         partnerIds: (l.production_partners || []).map((p) => p.production_partner_id),
+        readinessStateId: l.readiness_state_id || null,       // processing profile
+        itemWeight: l.item_weight || '',
+        weightUnit: l.item_weight_unit || 'oz',
+        itemLength: l.item_length || '',
+        itemWidth: l.item_width || '',
+        itemHeight: l.item_height || '',
+        dimUnit: l.item_dimensions_unit || 'in',
         shippingProfileId: l.shipping_profile_id || null,
         returnPolicyId: l.return_policy_id || null,
         properties: props,
@@ -494,6 +526,14 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.type !== undefined && patch.type) body.type = String(patch.type)             // physical | download
     if (patch.taxonomyId !== undefined && patch.taxonomyId) body.taxonomy_id = Number(patch.taxonomyId)
     if (patch.partnerIds !== undefined) body.production_partner_ids = patch.partnerIds || []
+    // shipping tab: processing profile + weight/dimensions
+    if (patch.readinessStateId !== undefined && patch.readinessStateId) body.readiness_state_id = Number(patch.readinessStateId)
+    if (patch.itemWeight !== undefined && patch.itemWeight !== '') body.item_weight = Number(patch.itemWeight)
+    if (patch.weightUnit !== undefined && patch.weightUnit) body.item_weight_unit = String(patch.weightUnit)
+    if (patch.itemLength !== undefined && patch.itemLength !== '') body.item_length = Number(patch.itemLength)
+    if (patch.itemWidth !== undefined && patch.itemWidth !== '') body.item_width = Number(patch.itemWidth)
+    if (patch.itemHeight !== undefined && patch.itemHeight !== '') body.item_height = Number(patch.itemHeight)
+    if (patch.dimUnit !== undefined && patch.dimUnit) body.item_dimensions_unit = String(patch.dimUnit)
     if (patch.shippingProfileId !== undefined && patch.shippingProfileId) body.shipping_profile_id = Number(patch.shippingProfileId)
     if (patch.returnPolicyId !== undefined && patch.returnPolicyId) body.return_policy_id = Number(patch.returnPolicyId)
     // personalization (Vela's Personalization tab)
@@ -632,6 +672,9 @@ router.get('/inventory', requireUser, async (req, res) => {
         price: money(p.offerings?.[0]?.price),
         quantity: p.offerings?.[0]?.quantity ?? 0,
         enabled: !!p.offerings?.[0]?.is_enabled,
+        // Etsy (Oct 2025 se): physical listings ke har offering par readiness_state_id
+        // zaruri hai — isay save par WAPAS bhejna parta hai warna Etsy reject karta hai
+        readinessStateId: p.offerings?.[0]?.readiness_state_id || null,
       })),
     })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -653,7 +696,10 @@ router.post('/inventory/update', requireUser, async (req, res) => {
       products: products.map((p) => ({
         sku: p.sku || '',
         property_values: p.propertyValues || [],
-        offerings: [{ price: Number(p.price), quantity: Number(p.quantity) || 0, is_enabled: !!p.enabled }],
+        offerings: [{
+          price: Number(p.price), quantity: Number(p.quantity) || 0, is_enabled: !!p.enabled,
+          ...(p.readinessStateId ? { readiness_state_id: Number(p.readinessStateId) } : {}),
+        }],
       })),
       price_on_property: priceOnProperty,
       quantity_on_property: quantityOnProperty,

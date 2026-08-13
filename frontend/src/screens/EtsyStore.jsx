@@ -301,6 +301,15 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [shipId, setShipId] = useState(detail.shippingProfileId || '')
   const [retPolicies, setRetPolicies] = useState(null)
   const [retId, setRetId] = useState(detail.returnPolicyId || '')
+  // ---- Shipping tab (Vela jaisa): processing profile + weight/dimensions ----
+  const [readiness, setReadiness] = useState(null)     // shop ke processing profiles (live)
+  const [readyId, setReadyId] = useState(detail.readinessStateId || '')
+  const [wt, setWt] = useState(detail.itemWeight || '')
+  const [wtU, setWtU] = useState(detail.weightUnit || 'oz')
+  const [dimL, setDimL] = useState(detail.itemLength || '')
+  const [dimW, setDimW] = useState(detail.itemWidth || '')
+  const [dimH, setDimH] = useState(detail.itemHeight || '')
+  const [dimU, setDimU] = useState(detail.dimUnit || 'in')
   const [props, setProps] = useState(null)              // category ke attribute dropdowns
   const [propSel, setPropSel] = useState(() => {
     // current attribute values from the listing -> {propertyId: [valueId, ...]}
@@ -334,6 +343,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => setRetPolicies([]))
     etsy.taxonomyTree().then((r) => setTaxoTree(r.tree)).catch(() => setTaxoTree([]))
     etsy.partners(storeId).then((r) => setPartners(r.partners)).catch(() => setPartners([]))
+    etsy.readiness(storeId).then((r) => setReadiness(r.states)).catch(() => setReadiness([]))
   }, [storeId])
 
   // tree aane par: listing ki category ka pura rasta (root -> leaf) nikal lo
@@ -396,6 +406,12 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       if (String(effTaxo || '') !== String(detail.taxonomyId || '')) patch.taxonomyId = effTaxo
       if (JSON.stringify([...partnerIds].sort()) !== JSON.stringify([...(detail.partnerIds || []).map(String)].sort())) patch.partnerIds = partnerIds.map(Number)
       if (String(shipId || '') !== String(detail.shippingProfileId || '')) patch.shippingProfileId = shipId
+      if (String(readyId || '') !== String(detail.readinessStateId || '')) patch.readinessStateId = readyId
+      if (String(wt) !== String(detail.itemWeight || '')) { patch.itemWeight = wt; patch.weightUnit = wtU }
+      else if (wtU !== (detail.weightUnit || 'oz')) { patch.itemWeight = wt; patch.weightUnit = wtU }
+      if (String(dimL) !== String(detail.itemLength || '') || String(dimW) !== String(detail.itemWidth || '') || String(dimH) !== String(detail.itemHeight || '') || dimU !== (detail.dimUnit || 'in')) {
+        patch.itemLength = dimL; patch.itemWidth = dimW; patch.itemHeight = dimH; patch.dimUnit = dimU
+      }
       if (String(retId || '') !== String(detail.returnPolicyId || '')) patch.returnPolicyId = retId
       if (Object.keys(patch).length) await etsy.update(storeId, detail.id, patch)
 
@@ -438,12 +454,14 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     tags: tags.length > 13 ? `Tags ${tags.length - 13} zyada hain (max 13)` : tags.some((t) => t.length > 20) ? 'Koi tag 20 characters se lamba hai' : null,
     materials: mats.length > 13 ? 'Materials 13 se zyada hain (max 13)' : mats.some((m) => m.length > 45) ? 'Koi material 45 characters se lamba hai' : null,
     variations: (varCount || 0) > 399 ? `Variations ${varCount} hain (max 399)` : null,
+    shipping: detail.type !== 'download' && !retId ? 'Return policy zaruri hai — Etsy physical listings par isay REQUIRED rakhta hai' : null,
   }
   // tab par RED dot = us tab me Etsy-rule error hai
   const dots = {
     title: !!errs.title,
     tags: !!(errs.tags || errs.materials),
     variations: !!errs.variations,
+    shipping: !!errs.shipping,
     personalization: persErr,
   }
 
@@ -544,27 +562,74 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} />
       )}
 
-      {/* ---- Shipping ---- */}
+      {/* ---- Shipping — Vela/Etsy jaisa: Processing profile, Shipping profile,
+           Item weight + dimensions, Return policy (Etsy par REQUIRED) ---- */}
       {tab === 'shipping' && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>🚚 Shipping</h3>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
-              <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 200 }}>
-                {!shipProfiles && <option value="">⏳</option>}
-                {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+        <div className={'card' + (errs.shipping ? ' err-card' : '')}>
+          <h3 style={{ marginTop: 0 }}>Shipping {errs.shipping && <span className="err-badge">ERROR</span>}</h3>
+
+          <span style={{ display: 'block', marginBottom: 12 }}>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Processing profile</label>
+            {readiness === null && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}
+            {readiness && readiness.length > 0 && (
+              <select value={readyId || ''} onChange={(e) => setReadyId(e.target.value)} style={{ minWidth: 230 }}>
+                <option value="">— choose —</option>
+                {readiness.map((rz) => <option key={rz.id} value={rz.id}>{rz.label}</option>)}
               </select>
+            )}
+            {readiness && !readiness.length && <span className="muted" style={{ fontSize: 12 }}>Processing profiles Etsy par bante hain (Shop Manager → Settings) — yahan sirf select hote hain.</span>}
+          </span>
+
+          <span style={{ display: 'block', marginBottom: 12 }}>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
+            <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 230 }}>
+              {!shipProfiles && <option value="">⏳</option>}
+              {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+            </select>
+          </span>
+
+          {/* Item weight + dimensions (Optional — package estimate ke liye) */}
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Item weight <span className="opt">Optional</span></label>
+              <span style={{ display: 'flex', gap: 6 }}>
+                <input type="number" min="0" step="0.01" value={wt} onChange={(e) => setWt(e.target.value)} style={{ width: 90 }} />
+                <select value={wtU} onChange={(e) => setWtU(e.target.value)}>
+                  <option value="oz">oz</option><option value="lb">lb</option><option value="g">g</option><option value="kg">kg</option>
+                </select>
+              </span>
             </span>
             <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Return policy</label>
-              <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} style={{ minWidth: 220 }}>
-                <option value="">— default —</option>
-                {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Length <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimL} onChange={(e) => setDimL(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Width <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimW} onChange={(e) => setDimW(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Height <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimH} onChange={(e) => setDimH(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Unit</label>
+              <select value={dimU} onChange={(e) => setDimU(e.target.value)}>
+                <option value="in">in</option><option value="ft">ft</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
               </select>
             </span>
           </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
+
+          {/* Return policy — Etsy par physical listing ke liye REQUIRED */}
+          <span style={{ display: 'block' }}>
+            <label className={errs.shipping ? 'err-msg' : 'muted'} style={{ fontSize: 12, display: 'block' }}>Return policy <b>*</b></label>
+            <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} className={errs.shipping ? 'in-err' : ''} style={{ minWidth: 240 }}>
+              <option value="">— choose (zaruri) —</option>
+              {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+            </select>
+            {errs.shipping && <p className="err-msg" style={{ margin: '6px 0 0' }}>{errs.shipping}</p>}
+          </span>
+
+          <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>Ye sab neeche 💾 Save to Etsy se save hota hai.</p>
         </div>
       )}
 
