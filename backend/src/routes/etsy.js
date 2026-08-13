@@ -665,6 +665,66 @@ router.post('/inventory/update', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// ---------- Personalization (Etsy ka NAYA multi-question system) ----------
+// 5 questions tak: text_input / dropdown / unlabeled_upload (photo!) / labeled_upload
+// + optional text questions par add_on_price ($0.20–$500).
+
+// GET /api/etsy/personalization?storeId=...&id=...
+router.get('/personalization', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/listings/${encodeURIComponent(id)}/personalization`)
+    const list = r.personalization_questions || r.results || []
+    res.json({
+      ok: true,
+      questions: list.map((q) => ({
+        id: q.question_id || null,
+        type: q.question_type || 'text_input',
+        text: q.question_text || '',
+        instructions: q.instructions || '',
+        required: !!q.required,
+        maxChars: q.max_allowed_characters || null,
+        maxFiles: q.max_allowed_files || null,
+        addOnPrice: q.add_on_price ? (q.add_on_price.amount ? q.add_on_price.amount / (q.add_on_price.divisor || 100) : Number(q.add_on_price) || null) : null,
+        options: (q.options || []).map((o) => o.label),
+      })),
+    })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/personalization { storeId, id, questions: [...] }
+// REPLACES the listing's personalization questions (Etsy ka naya endpoint).
+router.post('/personalization', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, questions = [] } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const body = {
+      personalization_questions: questions.slice(0, 5).map((q) => {
+        const o = { question_type: q.type, question_text: String(q.text || '').slice(0, 45), required: !!q.required }
+        if (q.id) o.question_id = q.id
+        if (q.type === 'text_input') {
+          o.max_allowed_characters = Math.min(1024, Math.max(1, Number(q.maxChars) || 256))
+          if (!q.required && q.addOnPrice) o.add_on_price = Number(q.addOnPrice)
+        }
+        if (q.type === 'unlabeled_upload' || q.type === 'labeled_upload') {
+          o.max_allowed_files = Math.min(10, Math.max(1, Number(q.maxFiles) || 1))
+        }
+        if (q.type === 'labeled_upload') o.options = (q.labels || []).map((l) => ({ label: String(l).slice(0, 45) }))
+        if (q.type === 'dropdown') o.options = (q.options || []).slice(0, 30).map((l) => ({ label: String(l).slice(0, 20) }))
+        if (q.type !== 'dropdown' && q.instructions) o.instructions = String(q.instructions)
+        return o
+      }),
+    }
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/personalization?supports_multiple_personalization_questions=true`, { method: 'POST', body: JSON.stringify(body) })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 // GET /api/etsy/varimages?storeId=...&id=...
 // Kis variation-option par kaunsi photo linki hui hai (buyer option chune to wahi dikhe).
 router.get('/varimages', requireUser, async (req, res) => {

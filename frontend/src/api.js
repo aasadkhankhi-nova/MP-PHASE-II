@@ -204,6 +204,8 @@ export const etsy = {
   setAlt: (storeId, id, imageId, alt, rank) => api('/api/etsy/listing/image/alt', { method: 'POST', body: JSON.stringify({ storeId, id, imageId, alt, rank }) }),
   taxonomyTree: () => api('/api/etsy/taxonomy/tree'),
   varImages: (storeId, id) => api(`/api/etsy/varimages?storeId=${encodeURIComponent(storeId)}&id=${encodeURIComponent(id)}`),
+  personalization: (storeId, id) => api(`/api/etsy/personalization?storeId=${encodeURIComponent(storeId)}&id=${encodeURIComponent(id)}`),
+  savePersonalization: (storeId, id, questions) => api('/api/etsy/personalization', { method: 'POST', body: JSON.stringify({ storeId, id, questions }) }),
   saveVarImages: (storeId, id, links) => api('/api/etsy/varimages', { method: 'POST', body: JSON.stringify({ storeId, id, links }) }),
   partners: (storeId) => api(`/api/etsy/partners?storeId=${encodeURIComponent(storeId)}`),
   // Photo-editor: Etsy CDN image -> dataURL (backend proxy se, CORS ke bina)

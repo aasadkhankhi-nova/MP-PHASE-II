@@ -316,11 +316,8 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [partnerIds, setPartnerIds] = useState((detail.partnerIds || []).map(String))
   const [taxoTree, setTaxoTree] = useState(null)                    // pura category tree (live)
   const [taxoPath, setTaxoPath] = useState([])                      // Category cascade: root -> leaf ids
-  // ---- personalization (Vela's Personalization tab) ----
-  const [persOn, setPersOn] = useState(!!detail.personalization?.enabled)
-  const [persReq, setPersReq] = useState(!!detail.personalization?.required)
-  const [persIns, setPersIns] = useState(detail.personalization?.instructions || '')
-  const [persMax, setPersMax] = useState(detail.personalization?.charMax || '')
+  // ---- personalization (naya Etsy multi-question system — apna editor) ----
+  const [persErr, setPersErr] = useState(false)
   // ---- Vela-style tab bar ----
   const [tab, setTab] = useState('photos')
   const [varCount, setVarCount] = useState(null)   // combos count (InventoryEditor batata hai)
@@ -379,6 +376,9 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   }
 
   const save = async () => {
+    // RED errors ke saath save NAHI hota — Etsy waise bhi reject kar dega
+    const blocking = Object.values(errs).filter(Boolean)
+    if (blocking.length) { setMsg('⚠ Pehle RED errors theek karein: ' + blocking.join(' · ')); return }
     setBusy(true); setMsg(null)
     try {
       // 1) main fields — send only what actually changed
@@ -397,14 +397,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       if (JSON.stringify([...partnerIds].sort()) !== JSON.stringify([...(detail.partnerIds || []).map(String)].sort())) patch.partnerIds = partnerIds.map(Number)
       if (String(shipId || '') !== String(detail.shippingProfileId || '')) patch.shippingProfileId = shipId
       if (String(retId || '') !== String(detail.returnPolicyId || '')) patch.returnPolicyId = retId
-      // personalization
-      const P = detail.personalization || {}
-      if (persOn !== !!P.enabled) patch.personalizable = persOn
-      if (persOn) {
-        if (persReq !== !!P.required) patch.persRequired = persReq
-        if (persIns !== (P.instructions || '')) patch.persInstructions = persIns
-        if (String(persMax || '') !== String(P.charMax || '')) patch.persCharMax = persMax
-      }
       if (Object.keys(patch).length) await etsy.update(storeId, detail.id, patch)
 
       // 2) attributes — one call per CHANGED property; multi-value attributes
@@ -440,12 +432,19 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     ['price', 'Price'], ['inventory', 'Inventory'], ['variations', 'Variations'],
     ['personalization', 'Personalization'], ['shipping', 'Shipping'],
   ]
-  // Red dot = Etsy ke rule ke KHILAF kuch hai (warning), warna koi dot nahi:
-  //  - Variations: Etsy max 399 combos accept karta hai (400+ reject)
-  //  - Personalization: instructions max 120 characters
+  // ---- Etsy ki limits LIVE check hoti hain — jahan cross ho wahan RED ----
+  const errs = {
+    title: !title.trim() ? 'Title khali hai' : title.length > 140 ? `Title ${title.length - 140} characters ZYADA hai (max 140)` : null,
+    tags: tags.length > 13 ? `Tags ${tags.length - 13} zyada hain (max 13)` : tags.some((t) => t.length > 20) ? 'Koi tag 20 characters se lamba hai' : null,
+    materials: mats.length > 13 ? 'Materials 13 se zyada hain (max 13)' : mats.some((m) => m.length > 45) ? 'Koi material 45 characters se lamba hai' : null,
+    variations: (varCount || 0) > 399 ? `Variations ${varCount} hain (max 399)` : null,
+  }
+  // tab par RED dot = us tab me Etsy-rule error hai
   const dots = {
-    variations: (varCount || 0) > 399,
-    personalization: persOn && persIns.length > 120,
+    title: !!errs.title,
+    tags: !!(errs.tags || errs.materials),
+    variations: !!errs.variations,
+    personalization: persErr,
   }
 
   return (
@@ -481,10 +480,11 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
 
       {/* ---- Title ---- */}
       {tab === 'title' && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>Title <span className="chip">{detail.state}</span></h3>
-          <label className="muted" style={{ fontSize: 12 }}>Title ({140 - title.length} baqi)</label>
-          <input value={title} maxLength={140} onChange={(e) => setTitle(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+        <div className={'card' + (errs.title ? ' err-card' : '')}>
+          <h3 style={{ marginTop: 0 }}>Title <span className="chip">{detail.state}</span> {errs.title && <span className="err-badge">ERROR</span>}</h3>
+          <label className={errs.title ? 'err-msg' : 'muted'} style={{ fontSize: 12 }}>Title ({140 - title.length} baqi)</label>
+          <input value={title} onChange={(e) => setTitle(e.target.value)} className={errs.title ? 'in-err' : ''} style={{ width: '100%', marginBottom: 6 }} />
+          {errs.title && <p className="err-msg" style={{ margin: '0 0 8px' }}>{errs.title}</p>}
           <p className="muted" style={{ fontSize: 12 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
         </div>
       )}
@@ -499,10 +499,12 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
 
       {/* ---- Tags & Materials ---- */}
       {tab === 'tags' && (
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>Tags</h3>
+      <div className={'card' + (errs.tags || errs.materials ? ' err-card' : '')}>
+        <h3 style={{ marginTop: 0 }}>Tags {(errs.tags || errs.materials) && <span className="err-badge">ERROR</span>}</h3>
+        {errs.tags && <p className="err-msg">{errs.tags}</p>}
+        {errs.materials && <p className="err-msg">{errs.materials}</p>}
         {/* tags: chips with X, input to add (Enter or button) */}
-        <label className="muted" style={{ fontSize: 12 }}>Tags ({13 - tags.length} baqi)</label>
+        <label className={errs.tags ? 'err-msg' : 'muted'} style={{ fontSize: 12 }}>Tags ({13 - tags.length} baqi)</label>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '4px 0 6px' }}>
           {tags.map((t) => (
             <span key={t} className="chip">{t} <a className="lnk" style={{ cursor: 'pointer' }} onClick={() => setTags(tags.filter((x) => x !== t))}>✕</a></span>
@@ -514,7 +516,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         </div>
 
         {/* materials: same chips pattern */}
-        <label className="muted" style={{ fontSize: 12 }}>Materials ({13 - mats.length} baqi)</label>
+        <label className={errs.materials ? 'err-msg' : 'muted'} style={{ fontSize: 12 }}>Materials ({13 - mats.length} baqi)</label>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '4px 0 6px' }}>
           {mats.map((t) => (
             <span key={t} className="chip">{t} <a className="lnk" style={{ cursor: 'pointer' }} onClick={() => setMats(mats.filter((x) => x !== t))}>✕</a></span>
@@ -536,33 +538,10 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} onCount={setVarCount} images={detail.images || []} />
       </div>
 
-      {/* ---- Personalization ---- */}
+      {/* ---- Personalization — Etsy ka NAYA system: 5 questions tak,
+           Text box / Dropdown / PHOTO-UPLOAD / Labeled upload + Add-on price ---- */}
       {tab === 'personalization' && (
-        <div className="card">
-          <h3 style={{ marginTop: 0 }}>🎁 Personalization</h3>
-          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', marginBottom: 10 }}>
-            <input type="checkbox" checked={persOn} onChange={(e) => setPersOn(e.target.checked)} />
-            Buyers is listing ko personalize kar sakte hain
-          </label>
-          {persOn && (
-            <>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', marginBottom: 10 }} className="muted">
-                <input type="checkbox" checked={persReq} onChange={(e) => setPersReq(e.target.checked)} />
-                Personalization REQUIRED ho (buyer ko likhna hi padega)
-              </label>
-              <label className="muted" style={{ fontSize: 12 }}>
-                Instructions for buyers ({persIns.length}/120)
-                {persIns.length > 120 && <b style={{ color: 'var(--err)' }}> — Etsy sirf 120 characters accept karta hai!</b>}
-              </label>
-              <textarea value={persIns} onChange={(e) => setPersIns(e.target.value)} rows={4}
-                placeholder="e.g. Enter the name you want printed…"
-                style={{ width: '100%', border: '1px solid ' + (persIns.length > 120 ? 'var(--err)' : 'var(--line)'), borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Max characters (khali = Etsy default)</label>
-              <input type="number" min="1" max="1024" value={persMax} onChange={(e) => setPersMax(e.target.value)} style={{ width: 120 }} />
-            </>
-          )}
-          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
-        </div>
+        <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} />
       )}
 
       {/* ---- Shipping ---- */}
@@ -754,10 +733,213 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save to Etsy'}</button>
           <button className="btn ghost" disabled={busy} onClick={onCancel}>Cancel</button>
         </div>
-        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
       <PublishCard storeId={storeId} listingId={detail.id} state={detail.state} onDone={onDone} />
     </>
+  )
+}
+
+/**
+ * PersonalizationEditor — Etsy ka NAYA personalization system, bilkul Etsy ke
+ * apne edit page jaisa (screenshot wala layout): 5 questions tak, types:
+ * Text box / Dropdown / Photo-file upload (naya!) / Labeled upload.
+ * Optional text question par Add-on price ($0.20–$500).
+ * Etsy ki HAR limit live check hoti hai — cross hote hi RED:
+ * field title ≤45, instructions ≤120, character limit 1–1024,
+ * files 1–10, dropdown options ≤30 (har label ≤20 chars).
+ */
+const QTYPES = [
+  ['text_input', 'Text box'],
+  ['dropdown', 'Dropdown'],
+  ['unlabeled_upload', 'Photo / file upload'],
+  ['labeled_upload', 'Labeled upload (har file ka apna naam)'],
+]
+function PersonalizationEditor({ storeId, listingId, onErr }) {
+  const [qs, setQs] = useState(null)      // null = loading
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState(null)
+
+  useEffect(() => {
+    etsy.personalization(storeId, listingId)
+      .then((r) => setQs(r.questions.map((q) => ({ ...q, labels: q.type === 'labeled_upload' ? q.options : [], options: q.type === 'dropdown' ? q.options : [] }))))
+      .catch((e) => { setQs([]); setMsg('⚠ ' + e.message) })
+  }, [storeId, listingId])
+
+  const upd = (i, patch) => setQs(qs.map((q, x) => (x === i ? { ...q, ...patch } : q)))
+  const del = (i) => setQs(qs.filter((_, x) => x !== i))
+  const add = (type) => {
+    if (!type || qs.length >= 5) return
+    setQs([...qs, { id: null, type, text: 'Personalization', instructions: '', required: false, maxChars: type === 'text_input' ? 256 : null, maxFiles: type.includes('upload') ? 1 : null, addOnPrice: null, options: [], labels: type === 'labeled_upload' ? [''] : [] }])
+  }
+
+  // Etsy ke rules — har question ke errors ki list
+  const qErrs = (q) => {
+    const e = []
+    if (!String(q.text || '').trim()) e.push('Field title khali hai')
+    if (String(q.text || '').length > 45) e.push('Field title 45 characters se zyada hai')
+    if (q.type !== 'dropdown' && String(q.instructions || '').length > 120) e.push('Instructions should not exceed 120 characters')
+    if (q.type === 'text_input') {
+      const c = Number(q.maxChars)
+      if (!c || c < 1 || c > 1024) e.push('Character limit 1 se 1024 tak ho')
+      if (q.addOnPrice) {
+        const pz = Number(q.addOnPrice)
+        if (q.required) e.push('Add-on price sirf OPTIONAL (not required) text par lag sakti hai')
+        else if (pz < 0.2 || pz > 500) e.push('Add-on price $0.20 se $500 tak ho')
+      }
+    }
+    if (q.type.includes('upload')) {
+      const fz = Number(q.maxFiles)
+      if (!fz || fz < 1 || fz > 10) e.push('Files 1 se 10 tak ho sakti hain')
+    }
+    if (q.type === 'labeled_upload') {
+      const labels = q.labels || []
+      if (labels.length !== Number(q.maxFiles)) e.push('Har file ka ek label ho (labels = files ki tadaad)')
+      if (labels.some((l) => !String(l).trim() || String(l).length > 45)) e.push('Har label 1–45 characters ka ho')
+    }
+    if (q.type === 'dropdown') {
+      const ops = q.options || []
+      if (!ops.length || ops.length > 30) e.push('Dropdown me 1 se 30 options hon')
+      if (ops.some((o) => !String(o).trim() || String(o).length > 20)) e.push('Har option 1–20 characters ka ho')
+    }
+    return e
+  }
+  const allErrs = (qs || []).flatMap(qErrs)
+  useEffect(() => { onErr && onErr(allErrs.length > 0) }, [allErrs.length])
+
+  const save = async () => {
+    if (allErrs.length) return setMsg('⚠ Pehle RED errors theek karein')
+    setBusy(true); setMsg(null)
+    try {
+      if (!qs.length) await etsy.update(storeId, listingId, { personalizable: false })
+      else await etsy.savePersonalization(storeId, listingId, qs)
+      setMsg('✅ Personalization Etsy par save ho gayi')
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
+
+  if (qs === null) return <div className="card"><p className="muted">⏳ personalization load ho rahi hai…</p></div>
+
+  return (
+    <div className={'card' + (allErrs.length ? ' err-card' : '')}>
+      <h3 style={{ marginTop: 0 }}>Personalization {allErrs.length > 0 && <span className="err-badge">ERROR</span>}</h3>
+      <div className="pq-grid">
+        {qs.map((q, i) => {
+          const e = qErrs(q)
+          return (
+            <div key={i} className={'pq-card' + (e.length ? ' err-card' : '')}>
+              {/* top row: field type + Required + 🗑 (Etsy jaisa) */}
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                <select value={q.type}
+                  onChange={(ev) => upd(i, { type: ev.target.value, maxChars: ev.target.value === 'text_input' ? (q.maxChars || 256) : null, maxFiles: ev.target.value.includes('upload') ? (q.maxFiles || 1) : null, labels: ev.target.value === 'labeled_upload' ? (q.labels?.length ? q.labels : ['']) : [] })}
+                  style={{ flex: 1 }}>
+                  {QTYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                </select>
+                <label style={{ display: 'flex', gap: 5, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+                  <input type="checkbox" checked={q.required} onChange={(ev) => upd(i, { required: ev.target.checked })} /> Required
+                </label>
+                <button className="ph-tool" title="Delete" onClick={() => del(i)}>🗑</button>
+              </div>
+
+              {/* Field title + Character limit + Add-on price (Etsy jaisi row) */}
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <span style={{ flex: 2, minWidth: 170 }}>
+                  <label className="muted" style={{ fontSize: 12, display: 'block' }}>Field title</label>
+                  <input value={q.text} onChange={(ev) => upd(i, { text: ev.target.value })}
+                    className={String(q.text || '').length > 45 || !String(q.text || '').trim() ? 'in-err' : ''} style={{ width: '100%' }} />
+                  <span className={String(q.text || '').length > 45 ? 'err-msg' : 'muted'} style={{ fontSize: 11 }}>{45 - String(q.text || '').length} characters remaining</span>
+                </span>
+                {q.type === 'text_input' && (
+                  <>
+                    <span>
+                      <label className="muted" style={{ fontSize: 12, display: 'block' }}>Character limit</label>
+                      <input type="number" value={q.maxChars || ''} onChange={(ev) => upd(i, { maxChars: ev.target.value })}
+                        className={!q.maxChars || q.maxChars < 1 || q.maxChars > 1024 ? 'in-err' : ''} style={{ width: 90 }} />
+                      <span className="muted" style={{ fontSize: 11, display: 'block' }}>1 to 1024</span>
+                    </span>
+                    <span>
+                      <label className="muted" style={{ fontSize: 12, display: 'block' }}>Add-on price <span className="opt">Optional</span></label>
+                      <input type="number" step="0.01" placeholder="Price" disabled={q.required} value={q.addOnPrice || ''} onChange={(ev) => upd(i, { addOnPrice: ev.target.value })}
+                        className={q.addOnPrice && !q.required && (q.addOnPrice < 0.2 || q.addOnPrice > 500) ? 'in-err' : ''} style={{ width: 90 }} />
+                      <span className="muted" style={{ fontSize: 11, display: 'block' }}>{q.required ? 'sirf optional field par' : '$0.20 to $500'}</span>
+                    </span>
+                  </>
+                )}
+                {q.type.includes('upload') && (
+                  <span>
+                    <label className="muted" style={{ fontSize: 12, display: 'block' }}>Max files</label>
+                    <input type="number" min="1" max="10" value={q.maxFiles || ''} onChange={(ev) => {
+                      const n = Number(ev.target.value) || 0
+                      const labels = q.type === 'labeled_upload' ? Array.from({ length: Math.min(10, Math.max(0, n)) }, (_, k) => (q.labels || [])[k] || '') : q.labels
+                      upd(i, { maxFiles: ev.target.value, labels })
+                    }} className={!q.maxFiles || q.maxFiles < 1 || q.maxFiles > 10 ? 'in-err' : ''} style={{ width: 80 }} />
+                    <span className="muted" style={{ fontSize: 11, display: 'block' }}>1 to 10</span>
+                  </span>
+                )}
+              </div>
+
+              {/* labeled upload: har file ka apna label */}
+              {q.type === 'labeled_upload' && (
+                <div style={{ marginTop: 8 }}>
+                  <label className="muted" style={{ fontSize: 12 }}>File labels (har file ke liye ek, ≤45 chars)</label>
+                  {(q.labels || []).map((l, k) => (
+                    <input key={k} value={l} placeholder={`File ${k + 1} ka label`}
+                      onChange={(ev) => upd(i, { labels: q.labels.map((x, kk) => (kk === k ? ev.target.value : x)) })}
+                      className={!String(l).trim() || String(l).length > 45 ? 'in-err' : ''} style={{ width: '100%', marginTop: 5 }} />
+                  ))}
+                </div>
+              )}
+
+              {/* dropdown: options (1–30, har ek ≤20 chars) */}
+              {q.type === 'dropdown' && (
+                <div style={{ marginTop: 8 }}>
+                  <label className={(q.options || []).length > 30 ? 'err-msg' : 'muted'} style={{ fontSize: 12 }}>Options ({(q.options || []).length}/30 — har ek ≤20 chars)</label>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '5px 0' }}>
+                    {(q.options || []).map((o, k) => (
+                      <span key={k} className={'chip' + (String(o).length > 20 ? ' err' : '')}>{o} <a className="lnk" style={{ cursor: 'pointer' }} onClick={() => upd(i, { options: q.options.filter((_, kk) => kk !== k) })}>✕</a></span>
+                    ))}
+                  </div>
+                  <input placeholder="Add option (Enter dabayein)" onKeyDown={(ev) => {
+                    if (ev.key !== 'Enter') return
+                    const v = ev.target.value.trim()
+                    if (v) { upd(i, { options: [...(q.options || []), v] }); ev.target.value = '' }
+                  }} style={{ width: 230 }} />
+                </div>
+              )}
+
+              {/* Instructions — dropdown par Etsy allow NAHI karta */}
+              {q.type !== 'dropdown' && (
+                <div style={{ marginTop: 8 }}>
+                  <label className="muted" style={{ fontSize: 12 }}>Instructions <span className="opt">Optional</span></label>
+                  <textarea value={q.instructions || ''} rows={3} onChange={(ev) => upd(i, { instructions: ev.target.value })}
+                    className={String(q.instructions || '').length > 120 ? 'in-err' : ''}
+                    style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 8, fontSize: 13, marginTop: 4 }} />
+                  {String(q.instructions || '').length > 120 && <span className="err-msg">Instructions should not exceed 120 characters ({String(q.instructions || '').length}/120)</span>}
+                </div>
+              )}
+
+              {e.length > 0 && <p className="err-msg" style={{ marginTop: 8 }}>{e.join(' · ')}</p>}
+            </div>
+          )
+        })}
+
+        {/* naya question slot (Etsy: max 5) — screenshot ke right panel jaisa */}
+        {qs.length < 5 && (
+          <div className="pq-card pq-empty">
+            <select defaultValue="" onChange={(ev) => { add(ev.target.value); ev.target.value = '' }} style={{ minWidth: 200 }}>
+              <option value="" disabled>Choose field type</option>
+              {QTYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </select>
+            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>{qs.length === 0 ? 'No personalization — field type chun kar add karein' : `${5 - qs.length} aur add ho sakte hain (photo-upload bhi!)`}</p>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save personalization'}</button>
+        {qs.length === 0 && <span className="muted" style={{ fontSize: 12 }}>Koi question nahi = Save par personalization OFF ho jayegi</span>}
+      </div>
+      {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
+    </div>
   )
 }
 
@@ -881,7 +1063,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
             <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
           </div>
         )}
-        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
     )
   }
@@ -910,7 +1092,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
         {(qtyVaries || skuVaries) && (
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Variation-wise values <b>Variations</b> tab me edit hoti hain.</p>
         )}
-        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
     )
   }
@@ -942,7 +1124,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
           )}
           <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
         </div>
-        {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
     )
   }
@@ -1162,7 +1344,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
           {vDirty && <span className="muted" style={{ fontSize: 12 }}>⚠ Changes abhi sirf yahan hain — Save dabane par Etsy par jayenge.</span>}
         </div>
       )}
-      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
 }
@@ -1228,6 +1410,9 @@ function PhotosEditor({ storeId, listingId, initial }) {
     try {
       let cur = imgs
       for (const f of Array.from(files).slice(0, MAX_PHOTOS - imgs.length)) {
+        // Etsy ke rules: sirf JPG / PNG / GIF, max 20MB — warna RED error
+        if (!['image/jpeg', 'image/png', 'image/gif'].includes(f.type)) { setMsg(`⚠ ${f.name}: Etsy sirf JPG / PNG / GIF photos leta hai — ye ${f.type || 'unknown'} hai`); continue }
+        if (f.size > 20 * 1024 * 1024) { setMsg(`⚠ ${f.name}: ${(f.size / 1048576).toFixed(1)}MB — Etsy ki had 20MB per photo hai`); continue }
         const dataUrl = await read(f)
         const res = await etsy.addImage(storeId, listingId, dataUrl, cur.length + 1)
         cur = [...cur, { id: res.imageId, url: dataUrl, full: null, alt: '' }]
@@ -1241,6 +1426,8 @@ function PhotosEditor({ storeId, listingId, initial }) {
   const replace = async (f) => {
     const i = repIdx.current
     if (!f || i < 0) return
+    if (!['image/jpeg', 'image/png', 'image/gif'].includes(f.type)) return setMsg(`⚠ Etsy sirf JPG / PNG / GIF leta hai — ye ${f.type || 'unknown'} hai`)
+    if (f.size > 20 * 1024 * 1024) return setMsg(`⚠ ${(f.size / 1048576).toFixed(1)}MB — Etsy ki had 20MB per photo hai`)
     setBusy(true); setMsg('⏳ photo replace ho rahi hai…')
     try {
       const old = imgs[i]
@@ -1359,7 +1546,7 @@ function PhotosEditor({ storeId, listingId, initial }) {
           </div>
         </div>
       )}
-      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
 
       {/* full-screen photo editor (Etsy jaisa) */}
       {editIdx !== null && editSrc && (
@@ -1384,6 +1571,8 @@ function VideoEditor({ storeId, listingId, initial }) {
 
   const upload = async (f) => {
     if (!f) return
+    // Etsy ke rules: sirf MP4 / MOV — webm ya koi aur format reject
+    if (!['video/mp4', 'video/quicktime'].includes(f.type)) return setMsg(`⚠ Etsy sirf MP4 / MOV video leta hai — ye ${f.type || 'unknown'} hai (webm NAHI chalti)`)
     if (f.size > MAX_MB * 1024 * 1024) return setMsg(`⚠ Video ${MAX_MB}MB se choti rakhein (Etsy ki had 100MB hai, magar free server itna hi utha sakta hai)`)
     setBusy(true); setMsg(null)
     try {
@@ -1432,7 +1621,7 @@ function VideoEditor({ storeId, listingId, initial }) {
       )}
 
       {busy && <p className="muted" style={{ marginTop: 8 }}>⏳ upload ho rahi hai… (bari video me waqt lagta hai)</p>}
-      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
 }
@@ -1466,7 +1655,7 @@ function PublishCard({ storeId, listingId, state, onDone }) {
         {state !== 'active' && <button className="btn" disabled={busy} onClick={() => go('active')}>🚀 Publish on Etsy (live)</button>}
         {state === 'active' && <button className="btn ghost" disabled={busy} onClick={() => go('inactive')}>⏸ Deactivate</button>}
       </div>
-      {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
+      {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
 }
