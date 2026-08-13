@@ -785,6 +785,7 @@ function PhotosEditor({ storeId, listingId, initial }) {
   const [msg, setMsg] = useState(null)
   const [drag, setDrag] = useState(null)      // kaunsi photo pakri hui hai (index)
   const [over, setOver] = useState(null)      // kis par chhorne wale hain (index)
+  const [dirty, setDirty] = useState(false)   // order badla hai par abhi Etsy par save NAHI hua
   const [menu, setMenu] = useState(null)      // kis photo ka ⋯ menu khula hai (id)
   const [altFor, setAltFor] = useState(null)  // kis photo ka alt editor khula hai (id)
   const [altTxt, setAltTxt] = useState('')
@@ -793,17 +794,22 @@ function PhotosEditor({ storeId, listingId, initial }) {
 
   const read = (f) => new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
 
-  // ---- drag & drop: nikaal kar nayi jagah INSERT + auto-save ----
-  const drop = async (to) => {
+  // ---- drag & drop: nikaal kar nayi jagah INSERT — sirf SCREEN par.
+  // Etsy par kuch NAHI jata jab tak user khud 💾 Save order na dabaye.
+  const drop = (to) => {
     const from = drag
     setDrag(null); setOver(null)
     if (from === null || to === null || from === to) return
     const a = [...imgs]
     const [m] = a.splice(from, 1)
     a.splice(to, 0, m)
-    setImgs(a)
-    setBusy(true); setMsg('⏳ naya order Etsy par save ho raha hai…')
-    try { await etsy.orderImages(storeId, listingId, a.map((x) => x.id)); setMsg('✅ Order Etsy par save ho gaya') }
+    setImgs(a); setDirty(true)
+    setMsg('✎ Order badla hai — neeche 💾 Save order dabayenge tab Etsy par jayega')
+  }
+
+  const saveOrder = async () => {
+    setBusy(true); setMsg('⏳ order Etsy par save ho raha hai…')
+    try { await etsy.orderImages(storeId, listingId, imgs.map((x) => x.id)); setDirty(false); setMsg('✅ Order Etsy par save ho gaya') }
     catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
@@ -860,7 +866,7 @@ function PhotosEditor({ storeId, listingId, initial }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/{MAX_PHOTOS}</span> {busy && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}</h3>
-      <p className="muted" style={{ fontSize: 12 }}>Photo pakar kar kisi bhi jagah chhorein — order Etsy par khud save ho jata hai. ⚠ = alt text nahi hai.</p>
+      <p className="muted" style={{ fontSize: 12 }}>Photo pakar kar kisi bhi jagah chhorein — phir neeche 💾 Save order dabayein, tabhi Etsy par jayega. ⚠ = alt text nahi hai.</p>
       <div className="ph-grid">
         {imgs.map((im, i) => (
           <div key={im.id}
@@ -903,6 +909,14 @@ function PhotosEditor({ storeId, listingId, initial }) {
       </div>
       {/* Replace ke liye chhupa input */}
       <input ref={repRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { replace(e.target.files[0]); e.target.value = '' }} />
+
+      {/* order badla ho to user KHUD save kare — tabhi Etsy par jata hai */}
+      {dirty && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: 12 }}>
+          <button className="btn" disabled={busy} onClick={saveOrder}>{busy ? '⏳ Saving…' : '💾 Save order'}</button>
+          <span className="muted" style={{ fontSize: 12 }}>⚠ Naya order abhi sirf yahan hai — Etsy par save nahi hua.</span>
+        </div>
+      )}
 
       {/* alt text editor */}
       {altFor && (
