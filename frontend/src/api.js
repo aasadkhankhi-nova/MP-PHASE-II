@@ -202,6 +202,8 @@ export const etsy = {
   delImage: (storeId, id, imageId) => api('/api/etsy/listing/image/delete', { method: 'POST', body: JSON.stringify({ storeId, id, imageId }) }),
   orderImages: (storeId, id, order) => api('/api/etsy/listing/image/order', { method: 'POST', body: JSON.stringify({ storeId, id, order }) }),
   setAlt: (storeId, id, imageId, alt, rank) => api('/api/etsy/listing/image/alt', { method: 'POST', body: JSON.stringify({ storeId, id, imageId, alt, rank }) }),
+  taxonomyTree: () => api('/api/etsy/taxonomy/tree'),
+  partners: (storeId) => api(`/api/etsy/partners?storeId=${encodeURIComponent(storeId)}`),
   // Photo-editor: Etsy CDN image -> dataURL (backend proxy se, CORS ke bina)
   imageData: async (url) => {
     const s = getSession()

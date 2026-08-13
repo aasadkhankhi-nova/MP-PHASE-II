@@ -227,29 +227,53 @@ router.get('/shipping-profiles', requireUser, async (req, res) => {
 // GET /api/etsy/taxonomy?q=wall
 // Search Etsy's category tree by name (e.g. "wall decor" -> taxonomy id).
 // The full tree is fetched once and cached in memory for 24h.
-let TAXO = { at: 0, flat: [] }
+let TAXO = { at: 0, flat: [], tree: [] }
+async function ensureTaxo() {
+  if (Date.now() - TAXO.at < 24 * 3600 * 1000 && TAXO.flat.length) return
+  const r = await fetch('https://api.etsy.com/v3/application/seller-taxonomy/nodes', { headers: { 'x-api-key': apiKeyHdr() } })
+  const j = await r.json()
+  if (!r.ok) throw new Error(j.error || 'taxonomy fetch failed')
+  // flatten the tree into "Parent > Child > Leaf" labels
+  const flat = []
+  const walk = (nodes, trail) => {
+    for (const n of nodes || []) {
+      const label = trail ? `${trail} > ${n.name}` : n.name
+      flat.push({ id: n.id, label })
+      walk(n.children, label)
+    }
+  }
+  walk(j.results, '')
+  // slim tree (id/name/children hi) — Category cascade-dropdowns ke liye
+  const slim = (nodes) => (nodes || []).map((n) => ({ id: n.id, name: n.name, children: slim(n.children) }))
+  TAXO = { at: Date.now(), flat, tree: slim(j.results || []) }
+}
 router.get('/taxonomy', requireUser, async (req, res) => {
   try {
-    if (Date.now() - TAXO.at > 24 * 3600 * 1000 || !TAXO.flat.length) {
-      const r = await fetch('https://api.etsy.com/v3/application/seller-taxonomy/nodes', { headers: { 'x-api-key': apiKeyHdr() } })
-      const j = await r.json()
-      if (!r.ok) throw new Error(j.error || 'taxonomy fetch failed')
-      // flatten the tree into "Parent > Child > Leaf" labels
-      const flat = []
-      const walk = (nodes, trail) => {
-        for (const n of nodes || []) {
-          const label = trail ? `${trail} > ${n.name}` : n.name
-          flat.push({ id: n.id, label })
-          walk(n.children, label)
-        }
-      }
-      walk(j.results, '')
-      TAXO = { at: Date.now(), flat }
-    }
+    await ensureTaxo()
     const qq = String(req.query.q || '').toLowerCase().trim()
     const hits = qq ? TAXO.flat.filter((n) => n.label.toLowerCase().includes(qq)).slice(0, 20) : TAXO.flat.slice(0, 20)
     res.json({ ok: true, nodes: hits })
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/taxonomy/tree
+// PURA category tree (Etsy ke apne Category dropdowns jaisa cascade banane ke liye).
+router.get('/taxonomy/tree', requireUser, async (req, res) => {
+  try { await ensureTaxo(); res.json({ ok: true, tree: TAXO.tree }) }
+  catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
+// GET /api/etsy/partners?storeId=...
+// Shop ke production partners (Etsy → Settings → Production partners wale).
+router.get('/partners', requireUser, async (req, res) => {
+  try {
+    const { storeId } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/production-partners`)
+    res.json({ ok: true, partners: (r.results || []).map((p) => ({ id: p.production_partner_id, name: p.partner_name, location: p.location || '' })) })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
 // ---------- 4. publish (draft) ----------
@@ -419,6 +443,9 @@ router.get('/listing', requireUser, async (req, res) => {
         taxonomyId: l.taxonomy_id || null,
         whoMade: l.who_made || null,
         whenMade: l.when_made || null,
+        isSupply: !!l.is_supply,                              // "What is it?" — supply ya finished product
+        type: l.type || 'physical',                           // physical | download | both
+        partnerIds: (l.production_partners || []).map((p) => p.production_partner_id),
         shippingProfileId: l.shipping_profile_id || null,
         returnPolicyId: l.return_policy_id || null,
         properties: props,
@@ -463,6 +490,10 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.autoRenew !== undefined) body.should_auto_renew = patch.autoRenew ? 'true' : 'false'
     if (patch.whoMade !== undefined) body.who_made = String(patch.whoMade)
     if (patch.whenMade !== undefined) body.when_made = String(patch.whenMade)
+    if (patch.isSupply !== undefined) body.is_supply = patch.isSupply ? 'true' : 'false'
+    if (patch.type !== undefined && patch.type) body.type = String(patch.type)             // physical | download
+    if (patch.taxonomyId !== undefined && patch.taxonomyId) body.taxonomy_id = Number(patch.taxonomyId)
+    if (patch.partnerIds !== undefined) body.production_partner_ids = patch.partnerIds || []
     if (patch.shippingProfileId !== undefined && patch.shippingProfileId) body.shipping_profile_id = Number(patch.shippingProfileId)
     if (patch.returnPolicyId !== undefined && patch.returnPolicyId) body.return_policy_id = Number(patch.returnPolicyId)
     // personalization (Vela's Personalization tab)

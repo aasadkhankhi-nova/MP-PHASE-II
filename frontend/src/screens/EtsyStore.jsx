@@ -303,11 +303,19 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [retId, setRetId] = useState(detail.returnPolicyId || '')
   const [props, setProps] = useState(null)              // category ke attribute dropdowns
   const [propSel, setPropSel] = useState(() => {
-    // current attribute values from the listing -> {propertyId: valueId}
+    // current attribute values from the listing -> {propertyId: [valueId, ...]}
+    // (array is liye ke kuch attributes MULTI hote hain — Sustainability waghera)
     const m = {}
-    for (const p of detail.properties || []) if (p.valueIds?.length) m[p.propertyId] = String(p.valueIds[0])
+    for (const p of detail.properties || []) if (p.valueIds?.length) m[p.propertyId] = p.valueIds.map(String)
     return m
   })
+  // ---- Details tab (Etsy ke listing form jaisa) ----
+  const [isSupply, setIsSupply] = useState(!!detail.isSupply)       // What is it?
+  const [ltype, setLtype] = useState(detail.type || 'physical')     // Physical / Digital
+  const [partners, setPartners] = useState(null)                    // production partners (live)
+  const [partnerIds, setPartnerIds] = useState((detail.partnerIds || []).map(String))
+  const [taxoTree, setTaxoTree] = useState(null)                    // pura category tree (live)
+  const [taxoPath, setTaxoPath] = useState([])                      // Category cascade: root -> leaf ids
   // ---- personalization (Vela's Personalization tab) ----
   const [persOn, setPersOn] = useState(!!detail.personalization?.enabled)
   const [persReq, setPersReq] = useState(!!detail.personalization?.required)
@@ -327,9 +335,33 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['i_did'], whenMade: ['made_to_order'] }))
     etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => setShipProfiles([]))
     etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => setRetPolicies([]))
-    if (detail.taxonomyId) etsy.properties(storeId, detail.taxonomyId).then((r) => setProps(r.properties)).catch(() => setProps([]))
-    else setProps([])
-  }, [storeId, detail.taxonomyId])
+    etsy.taxonomyTree().then((r) => setTaxoTree(r.tree)).catch(() => setTaxoTree([]))
+    etsy.partners(storeId).then((r) => setPartners(r.partners)).catch(() => setPartners([]))
+  }, [storeId])
+
+  // tree aane par: listing ki category ka pura rasta (root -> leaf) nikal lo
+  useEffect(() => {
+    if (!taxoTree || !detail.taxonomyId) return
+    const path = []
+    const find = (nodes, trail) => {
+      for (const n of nodes || []) {
+        const t = [...trail, n.id]
+        if (String(n.id) === String(detail.taxonomyId)) { path.push(...t); return true }
+        if (n.children?.length && find(n.children, t)) return true
+      }
+      return false
+    }
+    find(taxoTree, [])
+    if (path.length) setTaxoPath(path)
+  }, [taxoTree, detail.taxonomyId])
+
+  // jo category CHUNI hui hai (cascade me) — usi ke attributes live load hote hain
+  const effTaxo = taxoPath.length ? taxoPath[taxoPath.length - 1] : (detail.taxonomyId || null)
+  useEffect(() => {
+    if (!effTaxo) { setProps([]); return }
+    setProps(null)
+    etsy.properties(storeId, effTaxo).then((r) => setProps(r.properties)).catch(() => setProps([]))
+  }, [storeId, effTaxo])
 
   const addTag = () => {
     const t = tagIn.trim().toLowerCase()
@@ -359,6 +391,10 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       if (autoRenew !== !!detail.autoRenew) patch.autoRenew = autoRenew
       if (whoMade !== detail.whoMade) patch.whoMade = whoMade
       if (whenMade !== detail.whenMade) patch.whenMade = whenMade
+      if (isSupply !== !!detail.isSupply) patch.isSupply = isSupply
+      if (ltype !== (detail.type || 'physical')) patch.type = ltype
+      if (String(effTaxo || '') !== String(detail.taxonomyId || '')) patch.taxonomyId = effTaxo
+      if (JSON.stringify([...partnerIds].sort()) !== JSON.stringify([...(detail.partnerIds || []).map(String)].sort())) patch.partnerIds = partnerIds.map(Number)
       if (String(shipId || '') !== String(detail.shippingProfileId || '')) patch.shippingProfileId = shipId
       if (String(retId || '') !== String(detail.returnPolicyId || '')) patch.returnPolicyId = retId
       // personalization
@@ -371,16 +407,18 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       }
       if (Object.keys(patch).length) await etsy.update(storeId, detail.id, patch)
 
-      // 2) attributes (Sleeve length etc.) — one call per CHANGED property
+      // 2) attributes — one call per CHANGED property; multi-value attributes
+      //    (Sustainability waghera) poori list ke saath jate hain
       let propChanges = 0
       const orig = {}
-      for (const p of detail.properties || []) if (p.valueIds?.length) orig[p.propertyId] = String(p.valueIds[0])
+      for (const p of detail.properties || []) if (p.valueIds?.length) orig[p.propertyId] = p.valueIds.map(String).sort().join(',')
       for (const p of props || []) {
-        const now = propSel[p.propertyId] || ''
+        const nowArr = (propSel[p.propertyId] || []).filter(Boolean)
+        const now = [...nowArr].sort().join(',')
         const was = orig[p.propertyId] || ''
         if (now === was) continue
-        const opt = p.options.find((o) => String(o.id) === now)
-        await etsy.setProperty(storeId, detail.id, p.propertyId, now ? [Number(now)] : [], opt ? [opt.name] : [])
+        const names = nowArr.map((id) => p.options.find((o) => String(o.id) === id)?.name).filter(Boolean)
+        await etsy.setProperty(storeId, detail.id, p.propertyId, nowArr.map(Number), names)
         propChanges++
       }
 
@@ -551,30 +589,39 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         </div>
       )}
 
-      {/* ---- Details — section, auto-renew, who/when made + attributes (sab LIVE Etsy se) ---- */}
+      {/* ---- Details — Etsy ke apne listing form jaisa: Type, Who/What/When,
+           Production partner, Category cascade, sab attributes, Renewal, Section.
+           HAR dropdown ke options LIVE Etsy se aate hain. ---- */}
       {tab === 'details' && (
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>📋 Details</h3>
-        {/* section: the shop's REAL sections, straight from Etsy */}
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Section</label>
-            <select value={sectionId || ''} onChange={(e) => setSectionId(e.target.value)} style={{ minWidth: 180 }}>
-              <option value="">— koi section nahi —</option>
-              {(sections || []).map((sx) => <option key={sx.id} value={sx.id}>{sx.title}</option>)}
-            </select>
-            {!sections && <span className="muted" style={{ fontSize: 11 }}> ⏳</span>}
-          </span>
-          <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer' }} className="muted">
-            <input type="checkbox" checked={autoRenew} onChange={(e) => setAutoRenew(e.target.checked)} />
-            Auto-renew (expire par khud renew — Etsy $0.20 fee)
-          </label>
+        <h3 style={{ marginTop: 0 }}>Details</h3>
+
+        {/* Type — Physical / Digital (Etsy jaise radio cards) */}
+        <label className="muted" style={{ fontSize: 12 }}>Type</label>
+        <div className="tcards">
+          <button type="button" className={'tcard' + (ltype !== 'download' ? ' on' : '')} onClick={() => setLtype('physical')}>
+            <b>{ltype !== 'download' ? '◉' : '○'} Physical</b>
+            <span>A tangible item that you will ship to buyers.</span>
+          </button>
+          <button type="button" className={'tcard' + (ltype === 'download' ? ' on' : '')} onClick={() => setLtype('download')}>
+            <b>{ltype === 'download' ? '◉' : '○'} Digital</b>
+            <span>A digital file that buyers will download.</span>
+          </button>
         </div>
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
+
+        {/* Who / What / When — enums live Etsy se */}
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
           <span>
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>Who made it?</label>
             <select value={whoMade} onChange={(e) => setWhoMade(e.target.value)} style={{ minWidth: 150 }}>
               {(enums?.whoMade || [whoMade]).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
+            </select>
+          </span>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>What is it?</label>
+            <select value={isSupply ? 'supply' : 'finished'} onChange={(e) => setIsSupply(e.target.value === 'supply')} style={{ minWidth: 180 }}>
+              <option value="finished">A finished product</option>
+              <option value="supply">A supply or tool to make things</option>
             </select>
           </span>
           <span>
@@ -585,26 +632,119 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           </span>
         </div>
 
-        {/* category attributes: the SAME dropdowns + options Etsy shows,
-            loaded live for this listing's category (Sleeve length, Neckline...) */}
-        <h3 style={{ margin: '4px 0 8px' }}>🎛 Attributes <span className="chip">{props ? props.length : '⏳'}</span></h3>
-        {props === null && <p className="muted">⏳ Etsy se attributes load ho rahe hain…</p>}
-        {props && !props.length && <p className="muted">Is category ke liye koi dropdown-attribute nahi.</p>}
-        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+        {/* Production partner (Optional) — shop ke ASLI partners, live Etsy se */}
+        <label className="muted" style={{ fontSize: 12 }}>Production partner <span className="opt">Optional</span></label>
+        {partners === null && <p className="muted" style={{ fontSize: 12 }}>⏳ partners load ho rahe hain…</p>}
+        {partners && !partners.length && (
+          <p className="muted" style={{ fontSize: 12, margin: '4px 0 14px' }}>Aap ke Etsy shop me koi production partner nahi bana (Etsy → Settings → Production partners).</p>
+        )}
+        {partners && partners.length > 0 && (
+          <div className="attr-multi" style={{ maxWidth: 340, marginBottom: 14 }}>
+            {partners.map((pp) => (
+              <label key={pp.id}>
+                <input type="checkbox" checked={partnerIds.includes(String(pp.id))}
+                  onChange={() => setPartnerIds(partnerIds.includes(String(pp.id)) ? partnerIds.filter((x) => x !== String(pp.id)) : [...partnerIds, String(pp.id)])} />
+                {pp.name}{pp.location ? ` · ${pp.location}` : ''}
+              </label>
+            ))}
+          </div>
+        )}
+
+        {/* Category — Etsy ka pura category tree, cascade dropdowns
+            (Clothing > Women's Clothing > Tops & Tees > T-shirts) */}
+        <label className="muted" style={{ fontSize: 12 }}>Category</label>
+        {!taxoTree && <p className="muted" style={{ fontSize: 12 }}>⏳ category tree load ho raha hai…</p>}
+        {taxoTree && (
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '4px 0 14px' }}>
+            {(() => {
+              const rows = []
+              let level = taxoTree
+              for (let d = 0; level && level.length; d++) {
+                const sel = taxoPath[d] || ''
+                const lv = level
+                rows.push(
+                  <select key={d} value={sel} style={{ minWidth: 170 }}
+                    onChange={(e) => {
+                      const v = e.target.value
+                      setTaxoPath(v ? [...taxoPath.slice(0, d), Number(v)] : taxoPath.slice(0, d))
+                    }}>
+                    <option value="">— choose —</option>
+                    {lv.map((n) => <option key={n.id} value={n.id}>{n.name}</option>)}
+                  </select>
+                )
+                const node = lv.find((n) => String(n.id) === String(sel))
+                level = node && node.children && node.children.length ? node.children : null
+              }
+              return rows
+            })()}
+          </div>
+        )}
+
+        {/* Attributes — ISI category ke Etsy wale sab fields (Primary color,
+            Secondary color, Holiday, Occasion, Size, Pattern, Sleeve length,
+            Neckline, Sustainability...) — single = dropdown, multi = checkboxes.
+            Category badloge to fields bhi Etsy se naye aa jate hain. */}
+        {props === null && <p className="muted">⏳ Etsy se is category ke fields load ho rahe hain…</p>}
+        {props && !props.length && <p className="muted">Is category ke liye koi attribute nahi.</p>}
+        <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
           {(props || []).map((p) => (
-            <span key={p.propertyId}>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>{p.name}{p.required ? ' *' : ''}</label>
-              <select
-                value={propSel[p.propertyId] || ''}
-                onChange={(e) => setPropSel({ ...propSel, [p.propertyId]: e.target.value })}
-                style={{ minWidth: 160 }}
-              >
-                <option value="">— choose —</option>
-                {p.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-              </select>
+            <span key={p.propertyId} style={{ minWidth: 200 }}>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>
+                {p.name} {p.required ? <b>*</b> : <span className="opt">Optional</span>}
+              </label>
+              {!p.multi && (
+                <select
+                  value={(propSel[p.propertyId] || [])[0] || ''}
+                  onChange={(e) => setPropSel({ ...propSel, [p.propertyId]: e.target.value ? [e.target.value] : [] })}
+                  style={{ minWidth: 185 }}
+                >
+                  <option value="">Choose {p.name}</option>
+                  {p.options.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              )}
+              {p.multi && (
+                <div className="attr-multi">
+                  {p.options.map((o) => {
+                    const cur = propSel[p.propertyId] || []
+                    const onq = cur.includes(String(o.id))
+                    return (
+                      <label key={o.id}>
+                        <input type="checkbox" checked={onq}
+                          onChange={() => setPropSel({ ...propSel, [p.propertyId]: onq ? cur.filter((x) => x !== String(o.id)) : [...cur, String(o.id)] })} />
+                        {o.name}
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
             </span>
           ))}
         </div>
+
+        {/* Renewal options — Etsy jaise radio cards */}
+        <label className="muted" style={{ fontSize: 12 }}>Renewal options</label>
+        <div className="tcards">
+          <button type="button" className={'tcard' + (autoRenew ? ' on' : '')} onClick={() => setAutoRenew(true)}>
+            <b>{autoRenew ? '◉' : '○'} Automatic</b>
+            <span>Expire hone par $0.20 USD me khud renew hogi (recommended).</span>
+          </button>
+          <button type="button" className={'tcard' + (!autoRenew ? ' on' : '')} onClick={() => setAutoRenew(false)}>
+            <b>{!autoRenew ? '◉' : '○'} Manual</b>
+            <span>Expired listings me khud renew karunga.</span>
+          </button>
+        </div>
+
+        {/* Section — shop ke asli sections */}
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Section <span className="opt">Optional</span></label>
+          <select value={sectionId || ''} onChange={(e) => setSectionId(e.target.value)} style={{ minWidth: 200 }}>
+            <option value="">— koi section nahi —</option>
+            {(sections || []).map((sx) => <option key={sx.id} value={sx.id}>{sx.title}</option>)}
+          </select>
+          {!sections && <span className="muted" style={{ fontSize: 11 }}> ⏳</span>}
+        </span>
+
+        <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>Sab kuch neeche 💾 Save to Etsy se save hota hai.</p>
       </div>
       )}
 

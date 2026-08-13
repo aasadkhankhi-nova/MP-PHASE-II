@@ -223,3 +223,14 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .vd-upload { width: 340px; max-width: 100%; border: 1.6px solid var(--accent); background: #fafbfe; border-radius: 12px; padding: 28px 16px; display: flex; flex-direction: column; align-items: center; gap: 5px; cursor: pointer; }
 .vd-upload:hover { background: var(--accent-soft); }
 .vd-player { width: 100%; max-width: 460px; border-radius: 12px; border: 1px solid var(--line); background: #000; display: block; }
+
+/* ---- Details tab: Etsy-style radio cards + optional labels + multi checklists ---- */
+.tcards { display: flex; gap: 12px; flex-wrap: wrap; margin: 6px 0 14px; }
+.tcard { flex: 1; min-width: 220px; max-width: 380px; text-align: left; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 4px; font-family: inherit; }
+.tcard b { font-size: 14px; }
+.tcard span { font-size: 12px; color: var(--mut); }
+.tcard.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.tcard.on b { color: var(--accent); }
+.opt { color: var(--mut); font-weight: 400; font-size: 11px; margin-left: 4px; }
+.attr-multi { border: 1px solid var(--line); border-radius: 10px; background: #fafbfe; max-height: 180px; overflow: auto; padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
+.attr-multi label { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 2px; cursor: pointer; }
