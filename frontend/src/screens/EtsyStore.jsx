@@ -307,6 +307,15 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
     for (const p of detail.properties || []) if (p.valueIds?.length) m[p.propertyId] = String(p.valueIds[0])
     return m
   })
+  // ---- personalization (Vela's Personalization tab) ----
+  const [persOn, setPersOn] = useState(!!detail.personalization?.enabled)
+  const [persReq, setPersReq] = useState(!!detail.personalization?.required)
+  const [persIns, setPersIns] = useState(detail.personalization?.instructions || '')
+  const [persMax, setPersMax] = useState(detail.personalization?.charMax || '')
+  // ---- Vela-style tab bar ----
+  const [tab, setTab] = useState('photos')
+  // profiles: Profiles section me jo profiles banengi wo yahan aayengi
+  const profiles = useMemo(() => { try { return JSON.parse(localStorage.getItem('mp_profiles') || '[]') } catch { return [] } }, [])
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
 
@@ -350,6 +359,14 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
       if (whenMade !== detail.whenMade) patch.whenMade = whenMade
       if (String(shipId || '') !== String(detail.shippingProfileId || '')) patch.shippingProfileId = shipId
       if (String(retId || '') !== String(detail.returnPolicyId || '')) patch.returnPolicyId = retId
+      // personalization
+      const P = detail.personalization || {}
+      if (persOn !== !!P.enabled) patch.personalizable = persOn
+      if (persOn) {
+        if (persReq !== !!P.required) patch.persRequired = persReq
+        if (persIns !== (P.instructions || '')) patch.persInstructions = persIns
+        if (String(persMax || '') !== String(P.charMax || '')) patch.persCharMax = persMax
+      }
       if (Object.keys(patch).length) await etsy.update(storeId, detail.id, patch)
 
       // 2) attributes (Sleeve length etc.) — one call per CHANGED property
@@ -376,17 +393,68 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   // "made_to_order" -> "Made to order", "2020_2026" -> "2020 - 2026"
   const nice = (v) => String(v).replace(/_/g, ' ').replace(/(\d{4}) (\d{4})/, '$1 - $2').replace(/^\w/, (c) => c.toUpperCase())
 
+  // Vela-style tabs — sab ke naam upar, neeche selected wala panel
+  const TABS = [
+    ['photos', 'Photos'], ['video', 'Video'], ['title', 'Title'],
+    ['description', 'Description'], ['tags', 'Tags'], ['details', 'Details'],
+    ['price', 'Price'], ['inventory', 'Inventory'], ['variations', 'Variations'],
+    ['personalization', 'Personalization'], ['shipping', 'Shipping'],
+  ]
+  const dots = { variations: !!detail.hasVariations, personalization: persOn }
+
   return (
     <>
+      {/* ---- tab bar (Vela style) ---- */}
+      <div className="card" style={{ padding: '0 8px' }}>
+        <div className="etabs">
+          {TABS.map(([id, label]) => (
+            <button key={id} className={'etab' + (tab === id ? ' on' : '')} onClick={() => setTab(id)}>
+              {dots[id] && <span className="etab-dot" />}{label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ---- Choose Profile (green bar) — Profiles section me bani profiles yahan aayengi ---- */}
+      <div className="profile-bar">
+        <select defaultValue="">
+          <option value="">⊞ Choose Profile</option>
+          {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          {!profiles.length && <option disabled>— abhi koi profile nahi bani —</option>}
+        </select>
+        <span className="muted" style={{ fontSize: 12 }}>Profiles section jab banega, wahan ki profiles is dropdown me aayengi.</span>
+      </div>
+
+      {/* ---- Photos / Video (mounted rehte hain — tab badalne par kaam na ude) ---- */}
+      <div style={{ display: tab === 'photos' ? '' : 'none' }}>
+        <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} />
+      </div>
+      <div style={{ display: tab === 'video' ? '' : 'none' }}>
+        <VideoEditor storeId={storeId} listingId={detail.id} initial={detail.video} />
+      </div>
+
+      {/* ---- Title ---- */}
+      {tab === 'title' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Title <span className="chip">{detail.state}</span></h3>
+          <label className="muted" style={{ fontSize: 12 }}>Title ({140 - title.length} baqi)</label>
+          <input value={title} maxLength={140} onChange={(e) => setTitle(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
+          <p className="muted" style={{ fontSize: 12 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
+        </div>
+      )}
+
+      {/* ---- Description ---- */}
+      {tab === 'description' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>Description</h3>
+          <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={14} style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
+        </div>
+      )}
+
+      {/* ---- Tags & Materials ---- */}
+      {tab === 'tags' && (
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>✏️ Edit listing <span className="chip">{detail.state}</span></h3>
-
-        <label className="muted" style={{ fontSize: 12 }}>Title ({140 - title.length} baqi)</label>
-        <input value={title} maxLength={140} onChange={(e) => setTitle(e.target.value)} style={{ width: '100%', marginBottom: 10 }} />
-
-        <label className="muted" style={{ fontSize: 12 }}>Description</label>
-        <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={10} style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
-
+        <h3 style={{ marginTop: 0 }}>Tags</h3>
         {/* tags: chips with X, input to add (Enter or button) */}
         <label className="muted" style={{ fontSize: 12 }}>Tags ({13 - tags.length} baqi)</label>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '4px 0 6px' }}>
@@ -412,6 +480,70 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           <button className="btn sm ghost" onClick={addMat}>＋ Add</button>
         </div>
 
+      </div>
+      )}
+
+      {/* ---- Price / Inventory / Variations — teeno ek hi LIVE inventory editor
+           par chalte hain (mounted rehta hai), bas columns badalte hain ---- */}
+      <div style={{ display: ['price', 'inventory', 'variations'].includes(tab) ? '' : 'none' }}>
+        <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
+          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} />
+      </div>
+
+      {/* ---- Personalization ---- */}
+      {tab === 'personalization' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>🎁 Personalization</h3>
+          <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', marginBottom: 10 }}>
+            <input type="checkbox" checked={persOn} onChange={(e) => setPersOn(e.target.checked)} />
+            Buyers is listing ko personalize kar sakte hain
+          </label>
+          {persOn && (
+            <>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center', cursor: 'pointer', marginBottom: 10 }} className="muted">
+                <input type="checkbox" checked={persReq} onChange={(e) => setPersReq(e.target.checked)} />
+                Personalization REQUIRED ho (buyer ko likhna hi padega)
+              </label>
+              <label className="muted" style={{ fontSize: 12 }}>Instructions for buyers</label>
+              <textarea value={persIns} onChange={(e) => setPersIns(e.target.value)} rows={4}
+                placeholder="e.g. Enter the name you want printed…"
+                style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Max characters (khali = Etsy default)</label>
+              <input type="number" min="1" max="1024" value={persMax} onChange={(e) => setPersMax(e.target.value)} style={{ width: 120 }} />
+            </>
+          )}
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
+        </div>
+      )}
+
+      {/* ---- Shipping ---- */}
+      {tab === 'shipping' && (
+        <div className="card">
+          <h3 style={{ marginTop: 0 }}>🚚 Shipping</h3>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap' }}>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
+              <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 200 }}>
+                {!shipProfiles && <option value="">⏳</option>}
+                {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+              </select>
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Return policy</label>
+              <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} style={{ minWidth: 220 }}>
+                <option value="">— default —</option>
+                {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+            </span>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
+        </div>
+      )}
+
+      {/* ---- Details — section, auto-renew, who/when made + attributes (sab LIVE Etsy se) ---- */}
+      {tab === 'details' && (
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>📋 Details</h3>
         {/* section: the shop's REAL sections, straight from Etsy */}
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
           <span>
@@ -427,20 +559,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
             Auto-renew (expire par khud renew — Etsy $0.20 fee)
           </label>
         </div>
-
-      </div>
-
-      {/* ---- E4: variations / inventory (its own Save — replace-all on Etsy) ---- */}
-      <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency} />
-
-      {/* ---- E5: photos, video, publish ---- */}
-      <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} />
-      <VideoEditor storeId={storeId} listingId={detail.id} initial={detail.video} />
-      <PublishCard storeId={storeId} listingId={detail.id} state={detail.state} onDone={onDone} />
-
-      {/* ---- E3: Details — sab dropdowns LIVE Etsy se ---- */}
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>📋 Details</h3>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 10 }}>
           <span>
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>Who made it?</label>
@@ -452,20 +570,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>When did you make it?</label>
             <select value={whenMade} onChange={(e) => setWhenMade(e.target.value)} style={{ minWidth: 150 }}>
               {(enums?.whenMade || [whenMade]).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
-            </select>
-          </span>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
-            <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 170 }}>
-              {!shipProfiles && <option value="">⏳</option>}
-              {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
-            </select>
-          </span>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Return policy</label>
-            <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} style={{ minWidth: 200 }}>
-              <option value="">— default —</option>
-              {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             </select>
           </span>
         </div>
@@ -491,7 +595,9 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           ))}
         </div>
       </div>
+      )}
 
+      {/* ---- hamesha neeche: Save + Publish ---- */}
       <div className="card">
         <div style={{ display: 'flex', gap: 8 }}>
           <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save to Etsy'}</button>
@@ -499,6 +605,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         </div>
         {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
       </div>
+      <PublishCard storeId={storeId} listingId={detail.id} state={detail.state} onDone={onDone} />
     </>
   )
 }
@@ -511,7 +618,11 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
  * Note: which price varies by which dimension (price_on_property) is kept
  * EXACTLY as it is on Etsy — we edit values, not the structure.
  */
-function InventoryEditor({ storeId, listingId, currency }) {
+// mode: 'price' (sirf price), 'qty' (quantity+SKU), 'full' (sab kuch — Variations tab)
+function InventoryEditor({ storeId, listingId, currency, mode = 'full' }) {
+  const showPrice = mode === 'price' || mode === 'full'
+  const showQty = mode === 'qty' || mode === 'full'
+  const TITLE = mode === 'price' ? '💲 Price' : mode === 'qty' ? '📦 Inventory' : '🧩 Variations'
   const [inv, setInv] = useState(null)     // {priceOnProperty, products: [...]}
   const [rows, setRows] = useState([])     // editable copy of products
   const [bulkPrice, setBulkPrice] = useState('')
@@ -567,20 +678,27 @@ function InventoryEditor({ storeId, listingId, currency }) {
   if (rows.length === 1 && !rows[0].propertyValues.length) {
     return (
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>🧩 Price & Quantity</h3>
+        <h3 style={{ marginTop: 0 }}>{TITLE}</h3>
+        {mode === 'full' && <p className="muted" style={{ fontSize: 12 }}>Is listing me variations nahi hain — ek hi price/quantity hai.</p>}
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price ({currency})</label>
-            <input type="number" min="0.2" step="0.01" value={rows[0].price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 120 }} />
-          </span>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Quantity</label>
-            <input type="number" min="0" value={rows[0].quantity} onChange={(e) => upd(0, { quantity: e.target.value })} style={{ width: 100 }} />
-          </span>
-          <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU</label>
-            <input value={rows[0].sku} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 140 }} />
-          </span>
+          {showPrice && (
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price ({currency})</label>
+              <input type="number" min="0.2" step="0.01" value={rows[0].price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 120 }} />
+            </span>
+          )}
+          {showQty && (
+            <>
+              <span>
+                <label className="muted" style={{ fontSize: 12, display: 'block' }}>Quantity</label>
+                <input type="number" min="0" value={rows[0].quantity} onChange={(e) => upd(0, { quantity: e.target.value })} style={{ width: 100 }} />
+              </span>
+              <span>
+                <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU</label>
+                <input value={rows[0].sku} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 140 }} />
+              </span>
+            </>
+          )}
           <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
         </div>
         {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
@@ -591,17 +709,17 @@ function InventoryEditor({ storeId, listingId, currency }) {
   // variations table
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>🧩 Variations <span className="chip">{rows.length} combos</span></h3>
+      <h3 style={{ marginTop: 0 }}>{TITLE} <span className="chip">{rows.length} combos</span></h3>
       <p className="muted" style={{ fontSize: 12 }}>
-        {priceVaries ? 'Price har combo ki alag hai.' : 'Price sab combos ki EK hai (Etsy ka rule — pehli row ki price sab par lagegi).'}
-        {' '}Quantity {qtyVaries ? 'har combo ki alag.' : 'sab ki ek.'}
+        {showPrice && (priceVaries ? 'Price har combo ki alag hai.' : 'Price sab combos ki EK hai (Etsy ka rule — pehli row ki price sab par lagegi).')}
+        {showQty && <> Quantity {qtyVaries ? 'har combo ki alag.' : 'sab ki ek.'}</>}
       </p>
 
       {/* bulk row — set everything at once */}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
         <span className="muted" style={{ fontSize: 12 }}>Sab par lagao:</span>
-        <input type="number" placeholder="price" step="0.01" value={bulkPrice} onChange={(e) => setBulkPrice(e.target.value)} style={{ width: 100 }} />
-        <input type="number" placeholder="qty" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} style={{ width: 90 }} />
+        {showPrice && <input type="number" placeholder="price" step="0.01" value={bulkPrice} onChange={(e) => setBulkPrice(e.target.value)} style={{ width: 100 }} />}
+        {showQty && <input type="number" placeholder="qty" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} style={{ width: 90 }} />}
         <button className="btn sm ghost" onClick={applyBulk}>Apply to all</button>
       </div>
 
@@ -610,21 +728,23 @@ function InventoryEditor({ storeId, listingId, currency }) {
         {rows.map((r, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid var(--line)', opacity: r.enabled ? 1 : 0.5 }}>
             <b className="ellip" style={{ flex: 1, minWidth: 120, fontSize: 13 }}>{r.label}</b>
-            <input type="number" step="0.01" title="price" value={r.price || ''} disabled={!priceVaries && i > 0}
-              onChange={(e) => upd(i, { price: e.target.value })} style={{ width: 90 }} />
-            <input type="number" title="quantity" value={r.quantity} disabled={!qtyVaries && i > 0}
-              onChange={(e) => upd(i, { quantity: e.target.value })} style={{ width: 80 }} />
-            <input title="SKU" placeholder="SKU" value={r.sku} onChange={(e) => upd(i, { sku: e.target.value })} style={{ width: 110 }} />
+            {showPrice && <input type="number" step="0.01" title="price" value={r.price || ''} disabled={!priceVaries && i > 0}
+              onChange={(e) => upd(i, { price: e.target.value })} style={{ width: 90 }} />}
+            {showQty && <input type="number" title="quantity" value={r.quantity} disabled={!qtyVaries && i > 0}
+              onChange={(e) => upd(i, { quantity: e.target.value })} style={{ width: 80 }} />}
+            {showQty && <input title="SKU" placeholder="SKU" value={r.sku} onChange={(e) => upd(i, { sku: e.target.value })} style={{ width: 110 }} />}
             {/* on/off = is this combo buyable (visible) on Etsy */}
-            <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12 }} className="muted">
-              <input type="checkbox" checked={r.enabled} onChange={(e) => upd(i, { enabled: e.target.checked })} /> on
-            </label>
+            {mode === 'full' && (
+              <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12 }} className="muted">
+                <input type="checkbox" checked={r.enabled} onChange={(e) => upd(i, { enabled: e.target.checked })} /> on
+              </label>
+            )}
           </div>
         ))}
       </div>
 
       <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save variations'}</button>
+        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save'}</button>
       </div>
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>

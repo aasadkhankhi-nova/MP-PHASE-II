@@ -407,7 +407,8 @@ router.get('/listing', requireUser, async (req, res) => {
         url: l.url,
         images: (l.images || []).map((im) => ({ id: im.listing_image_id, url: im.url_570xN || im.url_fullxfull })).filter((x) => x.url),
         video: l.videos?.[0] ? { id: l.videos[0].video_id, url: l.videos[0].video_url, thumb: l.videos[0].thumbnail_url } : null,
-        personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '' },
+        personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '', charMax: l.personalization_char_count_max || null },
+        hasVariations: !!l.has_variations,
         section_id: l.shop_section_id || null,
         autoRenew: !!l.should_auto_renew,
         taxonomyId: l.taxonomy_id || null,
@@ -459,6 +460,11 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.whenMade !== undefined) body.when_made = String(patch.whenMade)
     if (patch.shippingProfileId !== undefined && patch.shippingProfileId) body.shipping_profile_id = Number(patch.shippingProfileId)
     if (patch.returnPolicyId !== undefined && patch.returnPolicyId) body.return_policy_id = Number(patch.returnPolicyId)
+    // personalization (Vela's Personalization tab)
+    if (patch.personalizable !== undefined) body.is_personalizable = patch.personalizable ? 'true' : 'false'
+    if (patch.persRequired !== undefined) body.personalization_is_required = patch.persRequired ? 'true' : 'false'
+    if (patch.persInstructions !== undefined) body.personalization_instructions = String(patch.persInstructions).slice(0, 1024)
+    if (patch.persCharMax !== undefined && patch.persCharMax) body.personalization_char_count_max = Number(patch.persCharMax)
     if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'kuch badla hi nahi' })
     const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form(body) })
     res.json({ ok: true, title: l.title })

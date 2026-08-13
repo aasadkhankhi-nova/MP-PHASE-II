@@ -161,3 +161,14 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 /* ---- pinned "Add shop" at the bottom of the panel (Vela-style dark) ---- */
 .add-shop-btn { width: 100%; border: 0; border-radius: 22px; background: #23252b; color: #fff; padding: 11px; font-size: 13.5px; font-weight: 700; cursor: pointer; }
 .add-shop-btn:hover { background: #34363e; }
+
+/* ---- Vela-style edit-page tabs ---- */
+.etabs { display: flex; gap: 2px; overflow-x: auto; }
+.etab { background: none; border: none; border-bottom: 2.5px solid transparent; padding: 13px 13px 11px; font-size: 13.5px; font-weight: 600; color: var(--mut); cursor: pointer; display: flex; align-items: center; gap: 6px; white-space: nowrap; font-family: inherit; }
+.etab:hover { color: var(--txt); }
+.etab.on { color: var(--txt); border-bottom-color: var(--accent); }
+.etab-dot { width: 7px; height: 7px; border-radius: 50%; background: #b0295e; display: inline-block; flex-shrink: 0; }
+
+/* ---- Choose Profile bar (green) on the edit page ---- */
+.profile-bar { background: #e9f6ef; border: 1px solid #d2ebdd; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.profile-bar select { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-weight: 600; min-width: 190px; font-family: inherit; }
