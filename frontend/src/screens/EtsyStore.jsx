@@ -121,7 +121,7 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
           </div>
         </div>
         {!detail && <div className="card"><p className="muted">⏳ listing load ho rahi hai…</p></div>}
-        {detail && edit && <EtsyEdit storeId={storeId} detail={detail} onDone={reload} onCancel={() => { setOpenId(null); setDetail(null); setEdit(false) }} />}
+        {detail && edit && <EtsyEdit storeId={storeId} detail={detail} shopName={es.shopName} onDone={reload} onCancel={() => { setOpenId(null); setDetail(null); setEdit(false) }} />}
         {detail && !edit && (
           <>
             <div className="card">
@@ -421,7 +421,15 @@ function NewShipProfile({ storeId, onDone }) {
   )
 }
 
-function EtsyEdit({ storeId, detail, onDone, onCancel }) {
+// Edit page ke sections — EK page par, tab click = scroll (Vela jaisa)
+const ETABS = [
+  ['photos', 'Photos'], ['video', 'Video'], ['title', 'Title'],
+  ['description', 'Description'], ['tags', 'Tags'], ['details', 'Details'],
+  ['price', 'Price'], ['inventory', 'Inventory'], ['variations', 'Variations'],
+  ['personalization', 'Personalization'], ['shipping', 'Shipping'],
+]
+
+function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   const [title, setTitle] = useState(detail.title || '')
   const [desc, setDesc] = useState(detail.description || '')
   const [tags, setTags] = useState(detail.tags || [])
@@ -468,6 +476,46 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   // ---- Vela-style tab bar ----
   const [tab, setTab] = useState('photos')
   const [varCount, setVarCount] = useState(null)   // combos count (InventoryEditor batata hai)
+  const [pubMenu, setPubMenu] = useState(false)    // Publish ▾ menu (bottom bar)
+
+  // EK page — scroll karne par upar wali tab ki BLUE underline saath chalti hai
+  useEffect(() => {
+    let raf = 0
+    const onScroll = () => {
+      cancelAnimationFrame(raf)
+      raf = requestAnimationFrame(() => {
+        let cur = ETABS[0][0]
+        for (const [id] of ETABS) {
+          const el = document.getElementById('esec-' + id)
+          if (el && el.getBoundingClientRect().top <= 175) cur = id
+        }
+        setTab(cur)
+      })
+    }
+    window.addEventListener('scroll', onScroll, { passive: true })
+    onScroll()
+    return () => { window.removeEventListener('scroll', onScroll); cancelAnimationFrame(raf) }
+  }, [])
+  const goTab = (id) => {
+    setTab(id)
+    const el = document.getElementById('esec-' + id)
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+
+  // Publish ▾ — Active (live) ya Draft (hidden) — store ke naam ke saath
+  const setStateTo = async (st) => {
+    setPubMenu(false)
+    const warn = st === 'active'
+      ? 'Listing LIVE (Active) ho jayegi — nayi listing par Etsy $0.20 fee leta hai. Continue?'
+      : 'Listing buyers se chhup jayegi (Draft / Inactive). Continue?'
+    if (!confirm(warn)) return
+    setBusy(true); setMsg(null)
+    try {
+      await etsy.setState(storeId, detail.id, st)
+      setMsg(st === 'active' ? '🚀 Listing LIVE ho gayi!' : '📝 Listing draft (inactive) ho gayi')
+      setTimeout(onDone, 900)
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
   // profiles: Profiles section me jo profiles banengi wo yahan aayengi
   const profiles = useMemo(() => { try { return JSON.parse(localStorage.getItem('mp_profiles') || '[]') } catch { return [] } }, [])
   const [busy, setBusy] = useState(false)
@@ -579,13 +627,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   // "made_to_order" -> "Made to order", "2020_2026" -> "2020 - 2026"
   const nice = (v) => String(v).replace(/_/g, ' ').replace(/(\d{4}) (\d{4})/, '$1 - $2').replace(/^\w/, (c) => c.toUpperCase())
 
-  // Vela-style tabs — sab ke naam upar, neeche selected wala panel
-  const TABS = [
-    ['photos', 'Photos'], ['video', 'Video'], ['title', 'Title'],
-    ['description', 'Description'], ['tags', 'Tags'], ['details', 'Details'],
-    ['price', 'Price'], ['inventory', 'Inventory'], ['variations', 'Variations'],
-    ['personalization', 'Personalization'], ['shipping', 'Shipping'],
-  ]
   // ---- Etsy ki limits LIVE check hoti hain — jahan cross ho wahan RED ----
   const errs = {
     title: !title.trim() ? 'Title khali hai' : title.length > 140 ? `Title ${title.length - 140} characters ZYADA hai (max 140)` : null,
@@ -605,19 +646,20 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
 
   return (
     <>
-      {/* ---- tab bar (Vela style) ---- */}
-      <div className="card" style={{ padding: '0 8px' }}>
+      {/* ---- STICKY top: tab bar + Choose Profile (scroll par upar chipki rehti hai) ---- */}
+      <div className="etabs-sticky">
+      <div className="card" style={{ padding: '0 8px', marginBottom: 10 }}>
         <div className="etabs">
-          {TABS.map(([id, label]) => (
-            <button key={id} className={'etab' + (tab === id ? ' on' : '')} onClick={() => setTab(id)}>
+          {ETABS.map(([id, label]) => (
+            <button key={id} className={'etab' + (tab === id ? ' on' : '')} onClick={() => goTab(id)}>
               {dots[id] && <span className="etab-dot" />}{label}
             </button>
           ))}
         </div>
       </div>
 
-      {/* ---- Choose Profile (green bar) — Profiles section me bani profiles yahan aayengi ---- */}
-      <div className="profile-bar">
+      {/* ---- Choose Profile (Profiles section me bani profiles yahan aayengi) ---- */}
+      <div className="profile-bar" style={{ marginBottom: 0 }}>
         <select defaultValue="">
           <option value="">⊞ Choose Profile</option>
           {profiles.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -625,36 +667,36 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         </select>
         <span className="muted" style={{ fontSize: 12 }}>Profiles section jab banega, wahan ki profiles is dropdown me aayengi.</span>
       </div>
+      </div>
 
-      {/* ---- Photos / Video (mounted rehte hain — tab badalne par kaam na ude) ---- */}
-      <div style={{ display: tab === 'photos' ? '' : 'none' }}>
+      {/* ---- SAB sections EK page par (scroll) — tab click = us section par jump ---- */}
+      <div id="esec-photos" className="esec">
         <PhotosEditor storeId={storeId} listingId={detail.id} initial={detail.images || []} />
       </div>
-      <div style={{ display: tab === 'video' ? '' : 'none' }}>
+      <div id="esec-video" className="esec">
         <VideoEditor storeId={storeId} listingId={detail.id} initial={detail.video} />
       </div>
 
       {/* ---- Title ---- */}
-      {tab === 'title' && (
+      <div id="esec-title" className="esec">
         <div className={'card' + (errs.title ? ' err-card' : '')}>
           <h3 style={{ marginTop: 0 }}>Title <span className="chip">{detail.state}</span> {errs.title && <span className="err-badge">ERROR</span>}</h3>
           <label className={errs.title ? 'err-msg' : 'muted'} style={{ fontSize: 12 }}>Title ({140 - title.length} baqi)</label>
           <input value={title} onChange={(e) => setTitle(e.target.value)} className={errs.title ? 'in-err' : ''} style={{ width: '100%', marginBottom: 6 }} />
           {errs.title && <p className="err-msg" style={{ margin: '0 0 8px' }}>{errs.title}</p>}
-          <p className="muted" style={{ fontSize: 12 }}>Ye neeche 💾 Save to Etsy se save hota hai.</p>
         </div>
-      )}
+      </div>
 
       {/* ---- Description ---- */}
-      {tab === 'description' && (
+      <div id="esec-description" className="esec">
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Description</h3>
           <textarea value={desc} onChange={(e) => setDesc(e.target.value)} rows={14} style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, marginBottom: 10 }} />
         </div>
-      )}
+      </div>
 
       {/* ---- Tags & Materials ---- */}
-      {tab === 'tags' && (
+      <div id="esec-tags" className="esec">
       <div className={'card' + (errs.tags || errs.materials ? ' err-card' : '')}>
         <h3 style={{ marginTop: 0 }}>Tags {(errs.tags || errs.materials) && <span className="err-badge">ERROR</span>}</h3>
         {errs.tags && <p className="err-msg">{errs.tags}</p>}
@@ -685,102 +727,12 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         </div>
 
       </div>
-      )}
-
-      {/* ---- Price / Inventory / Variations — teeno ek hi LIVE inventory editor
-           par chalte hain (mounted rehta hai), bas columns badalte hain ---- */}
-      <div style={{ display: ['price', 'inventory', 'variations'].includes(tab) ? '' : 'none' }}>
-        <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
-          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} onCount={setVarCount} images={detail.images || []} />
       </div>
-
-      {/* ---- Personalization — Etsy ka NAYA system: 5 questions tak,
-           Text box / Dropdown / PHOTO-UPLOAD / Labeled upload + Add-on price ---- */}
-      {tab === 'personalization' && (
-        <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} />
-      )}
-
-      {/* ---- Shipping — Vela/Etsy jaisa: Processing profile, Shipping profile,
-           Item weight + dimensions, Return policy (Etsy par REQUIRED) ---- */}
-      {tab === 'shipping' && (
-        <div className={'card' + (errs.shipping ? ' err-card' : '')}>
-          <h3 style={{ marginTop: 0 }}>Shipping {errs.shipping && <span className="err-badge">ERROR</span>}</h3>
-
-          <span style={{ display: 'block', marginBottom: 12 }}>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Processing profile</label>
-            {readiness === null && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}
-            {readiness && readiness.length > 0 && (
-              <select value={readyId || ''} onChange={(e) => setReadyId(e.target.value)} style={{ minWidth: 230 }}>
-                <option value="">— choose —</option>
-                {readiness.map((rz) => <option key={rz.id} value={rz.id}>{rz.label}</option>)}
-              </select>
-            )}
-            {readiness && !readiness.length && <span className="muted" style={{ fontSize: 12 }}>Processing profiles Etsy par bante hain (Shop Manager → Settings) — yahan sirf select hote hain.</span>}
-          </span>
-
-          <span style={{ display: 'block', marginBottom: 12 }}>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
-            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 230 }}>
-                {!shipProfiles && <option value="">⏳</option>}
-                {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
-              </select>
-              <NewShipProfile storeId={storeId} onDone={(id) => { etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => {}); setShipId(String(id)) }} />
-            </span>
-          </span>
-
-          {/* Item weight + dimensions (Optional — package estimate ke liye) */}
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Item weight <span className="opt">Optional</span></label>
-              <span style={{ display: 'flex', gap: 6 }}>
-                <input type="number" min="0" step="0.01" value={wt} onChange={(e) => setWt(e.target.value)} style={{ width: 90 }} />
-                <select value={wtU} onChange={(e) => setWtU(e.target.value)}>
-                  <option value="oz">oz</option><option value="lb">lb</option><option value="g">g</option><option value="kg">kg</option>
-                </select>
-              </span>
-            </span>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Length <span className="opt">Optional</span></label>
-              <input type="number" min="0" step="0.01" value={dimL} onChange={(e) => setDimL(e.target.value)} style={{ width: 84 }} />
-            </span>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Width <span className="opt">Optional</span></label>
-              <input type="number" min="0" step="0.01" value={dimW} onChange={(e) => setDimW(e.target.value)} style={{ width: 84 }} />
-            </span>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Height <span className="opt">Optional</span></label>
-              <input type="number" min="0" step="0.01" value={dimH} onChange={(e) => setDimH(e.target.value)} style={{ width: 84 }} />
-            </span>
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Unit</label>
-              <select value={dimU} onChange={(e) => setDimU(e.target.value)}>
-                <option value="in">in</option><option value="ft">ft</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
-              </select>
-            </span>
-          </div>
-
-          {/* Return policy — Etsy par physical listing ke liye REQUIRED */}
-          <span style={{ display: 'block' }}>
-            <label className={errs.shipping ? 'err-msg' : 'muted'} style={{ fontSize: 12, display: 'block' }}>Return policy <b>*</b></label>
-            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-              <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} className={errs.shipping ? 'in-err' : ''} style={{ minWidth: 240 }}>
-                <option value="">— choose (zaruri) —</option>
-                {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-              </select>
-              <NewReturnPolicy storeId={storeId} onDone={(id) => { etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => {}); setRetId(String(id)) }} />
-            </span>
-            {errs.shipping && <p className="err-msg" style={{ margin: '6px 0 0' }}>{errs.shipping}</p>}
-          </span>
-
-          <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>Ye sab neeche 💾 Save to Etsy se save hota hai.</p>
-        </div>
-      )}
 
       {/* ---- Details — Etsy ke apne listing form jaisa: Type, Who/What/When,
            Production partner, Category cascade, sab attributes, Renewal, Section.
            HAR dropdown ke options LIVE Etsy se aate hain. ---- */}
-      {tab === 'details' && (
+      <div id="esec-details" className="esec">
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Details</h3>
 
@@ -935,19 +887,121 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           </span>
         </span>
 
-        <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>Sab kuch neeche 💾 Save to Etsy se save hota hai.</p>
       </div>
-      )}
+      </div>
 
-      {/* ---- hamesha neeche: Save + Publish ---- */}
-      <div className="card">
-        <div style={{ display: 'flex', gap: 8 }}>
-          <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save to Etsy'}</button>
-          <button className="btn ghost" disabled={busy} onClick={onCancel}>Cancel</button>
-        </div>
-        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
+      {/* ---- Price / Inventory / Variations — teeno sections (ek hi LIVE inventory se) ---- */}
+      <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
+        mode="all" onCount={setVarCount} images={detail.images || []} />
+
+      {/* ---- Personalization — Etsy ka NAYA system: 5 questions tak,
+           Text box / Dropdown / PHOTO-UPLOAD / Labeled upload + Add-on price ---- */}
+      <div id="esec-personalization" className="esec">
+        <PersonalizationEditor storeId={storeId} listingId={detail.id} onErr={setPersErr} />
       </div>
-      <PublishCard storeId={storeId} listingId={detail.id} state={detail.state} onDone={onDone} />
+
+      {/* ---- Shipping — Vela/Etsy jaisa: Processing profile, Shipping profile,
+           Item weight + dimensions, Return policy (Etsy par REQUIRED) ---- */}
+      <div id="esec-shipping" className="esec">
+        <div className={'card' + (errs.shipping ? ' err-card' : '')}>
+          <h3 style={{ marginTop: 0 }}>Shipping {errs.shipping && <span className="err-badge">ERROR</span>}</h3>
+
+          <span style={{ display: 'block', marginBottom: 12 }}>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Processing profile</label>
+            {readiness === null && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}
+            {readiness && readiness.length > 0 && (
+              <select value={readyId || ''} onChange={(e) => setReadyId(e.target.value)} style={{ minWidth: 230 }}>
+                <option value="">— choose —</option>
+                {readiness.map((rz) => <option key={rz.id} value={rz.id}>{rz.label}</option>)}
+              </select>
+            )}
+            {readiness && !readiness.length && <span className="muted" style={{ fontSize: 12 }}>Processing profiles Etsy par bante hain (Shop Manager → Settings) — yahan sirf select hote hain.</span>}
+          </span>
+
+          <span style={{ display: 'block', marginBottom: 12 }}>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
+            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 230 }}>
+                {!shipProfiles && <option value="">⏳</option>}
+                {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+              </select>
+              <NewShipProfile storeId={storeId} onDone={(id) => { etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => {}); setShipId(String(id)) }} />
+            </span>
+          </span>
+
+          {/* Item weight + dimensions (Optional — package estimate ke liye) */}
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 12 }}>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Item weight <span className="opt">Optional</span></label>
+              <span style={{ display: 'flex', gap: 6 }}>
+                <input type="number" min="0" step="0.01" value={wt} onChange={(e) => setWt(e.target.value)} style={{ width: 90 }} />
+                <select value={wtU} onChange={(e) => setWtU(e.target.value)}>
+                  <option value="oz">oz</option><option value="lb">lb</option><option value="g">g</option><option value="kg">kg</option>
+                </select>
+              </span>
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Length <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimL} onChange={(e) => setDimL(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Width <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimW} onChange={(e) => setDimW(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Height <span className="opt">Optional</span></label>
+              <input type="number" min="0" step="0.01" value={dimH} onChange={(e) => setDimH(e.target.value)} style={{ width: 84 }} />
+            </span>
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Unit</label>
+              <select value={dimU} onChange={(e) => setDimU(e.target.value)}>
+                <option value="in">in</option><option value="ft">ft</option><option value="mm">mm</option><option value="cm">cm</option><option value="m">m</option>
+              </select>
+            </span>
+          </div>
+
+          {/* Return policy — Etsy par physical listing ke liye REQUIRED */}
+          <span style={{ display: 'block' }}>
+            <label className={errs.shipping ? 'err-msg' : 'muted'} style={{ fontSize: 12, display: 'block' }}>Return policy <b>*</b></label>
+            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} className={errs.shipping ? 'in-err' : ''} style={{ minWidth: 240 }}>
+                <option value="">— choose (zaruri) —</option>
+                {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <NewReturnPolicy storeId={storeId} onDone={(id) => { etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => {}); setRetId(String(id)) }} />
+            </span>
+            {errs.shipping && <p className="err-msg" style={{ margin: '6px 0 0' }}>{errs.shipping}</p>}
+          </span>
+
+        </div>
+      </div>
+
+      {/* ---- Vela-style STICKY bottom bar: Cancel · View on Etsy ·
+           Save as Profile · Copy · Save · Publish ▾ (Active / Draft) ---- */}
+      <div className="ebar">
+        <button className="btn ghost" disabled={busy} onClick={onCancel}>Cancel</button>
+        <span style={{ flex: 1, minWidth: 100, fontSize: 13 }}>
+          {msg && <span className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'}>{msg}</span>}
+        </span>
+        <a className="btn ghost" style={{ textDecoration: 'none' }} href={detail.url} target="_blank" rel="noreferrer">
+          <span style={{ color: '#f1641e', fontWeight: 800 }}>E</span> View on Etsy
+        </a>
+        <button className="btn ghost" disabled={busy} onClick={() => setMsg('⊞ Save as Profile — Profiles system jald aa raha hai')}>⊞ Save as Profile</button>
+        <button className="btn ghost" disabled={busy} onClick={() => setMsg('⧉ Copy listing jald aa raha hai')}>⧉ Copy</button>
+        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save'}</button>
+        <div className="pub-wrap">
+          <button className="btn" disabled={busy} onClick={() => setPubMenu(!pubMenu)}>⇧ Publish ⌄</button>
+          {pubMenu && (
+            <>
+              <div className="menu-veil" onClick={() => setPubMenu(false)} />
+              <div className="pub-menu">
+                <button onClick={() => setStateTo('active')}>🟢 Active — {shopName || 'Etsy shop'}{detail.state === 'active' ? ' ✓' : ''}</button>
+                <button onClick={() => setStateTo('inactive')}>📝 Draft — {shopName || 'Etsy shop'}{detail.state !== 'active' ? ' ✓' : ''}</button>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
     </>
   )
 }
@@ -1257,11 +1311,10 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
 
   if (!inv) return <div className="card"><p className="muted">{msg || '⏳ Variations load ho rahi hain…'}</p></div>
 
-  // ---- PRICE tab — Etsy/Vela jaisa: ek field; variation-wise ho to
+  // ---- PRICE section — Etsy/Vela jaisa: ek field; variation-wise ho to
   //      "Defined by Variation" (grey, disabled) ----
-  if (mode === 'price') {
-    return (
-      <div className="card">
+  const priceCard = (
+      <div className="card esec" id="esec-price">
         <h3 style={{ marginTop: 0 }}>Price</h3>
         <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price{priceVaries ? '' : ` (${currency})`}</label>
         {priceVaries ? (
@@ -1277,14 +1330,12 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
         )}
         {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
-    )
-  }
+  )
 
-  // ---- INVENTORY tab — Etsy/Vela jaisa: Quantity + SKU (Optional);
+  // ---- INVENTORY section — Quantity + SKU (Optional);
   //      jo cheez variation-wise ho wo "Defined by Variation" ----
-  if (mode === 'qty') {
-    return (
-      <div className="card">
+  const qtyCard = (
+      <div className="card esec" id="esec-inventory">
         <h3 style={{ marginTop: 0 }}>Inventory</h3>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
           <span>
@@ -1306,40 +1357,7 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
         )}
         {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
       </div>
-    )
-  }
-
-  // simple listing (no variations): one price + one quantity
-  if (rows.length === 1 && !rows[0].propertyValues.length) {
-    return (
-      <div className="card">
-        <h3 style={{ marginTop: 0 }}>{TITLE}</h3>
-        {mode === 'full' && <p className="muted" style={{ fontSize: 12 }}>Is listing me variations nahi hain — ek hi price/quantity hai.</p>}
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-          {showPrice && (
-            <span>
-              <label className="muted" style={{ fontSize: 12, display: 'block' }}>Price ({currency})</label>
-              <input type="number" min="0.2" step="0.01" value={rows[0].price || ''} onChange={(e) => upd(0, { price: e.target.value })} style={{ width: 120 }} />
-            </span>
-          )}
-          {showQty && (
-            <>
-              <span>
-                <label className="muted" style={{ fontSize: 12, display: 'block' }}>Quantity</label>
-                <input type="number" min="0" value={rows[0].quantity} onChange={(e) => upd(0, { quantity: e.target.value })} style={{ width: 100 }} />
-              </span>
-              <span>
-                <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU</label>
-                <input value={rows[0].sku} onChange={(e) => upd(0, { sku: e.target.value })} style={{ width: 140 }} />
-              </span>
-            </>
-          )}
-          <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳' : '💾 Save'}</button>
-        </div>
-        {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
-      </div>
-    )
-  }
+  )
 
   // ---------- helpers: Vela-style Variations sub-tabs ----------
   const relabel = (pvs) => pvs.map((pv) => (pv.values || []).join(', ')).join(' / ') || '—'
@@ -1418,9 +1436,15 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
     catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
 
-  // ---------- VARIATIONS tab (Vela-style sub-tabs) ----------
-  return (
-    <div className="card">
+  // ---------- VARIATIONS section (Vela-style sub-tabs) ----------
+  const simple = rows.length === 1 && !(rows[0].propertyValues || []).length
+  const varsCard = simple ? (
+    <div className="card esec" id="esec-variations">
+      <h3 style={{ marginTop: 0 }}>Variations</h3>
+      <p className="muted">Is listing me variations nahi hain — price/quantity upar wale sections me set hoti hain.</p>
+    </div>
+  ) : (
+    <div className="card esec" id="esec-variations">
       <h3 style={{ marginTop: 0 }}>Variations <span className="chip">{rows.length} combos</span></h3>
       {rows.length > 399 && (
         <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>⚠ Should not exceed 400 options combinations — abhi {rows.length} hain.</p>
@@ -1559,6 +1583,12 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
       {msg && <p className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'} style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )
+
+  if (mode === 'price') return priceCard
+  if (mode === 'qty') return qtyCard
+  if (mode === 'full') return varsCard
+  // mode 'all': teeno sections ek page par (Price → Inventory → Variations)
+  return <>{priceCard}{qtyCard}{varsCard}</>
 }
 
 /**
