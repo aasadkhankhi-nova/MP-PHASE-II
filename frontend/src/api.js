@@ -209,6 +209,9 @@ export const etsy = {
   saveVarImages: (storeId, id, links) => api('/api/etsy/varimages', { method: 'POST', body: JSON.stringify({ storeId, id, links }) }),
   partners: (storeId) => api(`/api/etsy/partners?storeId=${encodeURIComponent(storeId)}`),
   readiness: (storeId) => api(`/api/etsy/readiness?storeId=${encodeURIComponent(storeId)}`),
+  createSection: (storeId, title) => api('/api/etsy/section/create', { method: 'POST', body: JSON.stringify({ storeId, title }) }),
+  createReturnPolicy: (storeId, data) => api('/api/etsy/return-policy/create', { method: 'POST', body: JSON.stringify({ storeId, ...data }) }),
+  createShipProfile: (storeId, data) => api('/api/etsy/shipping-profile/create', { method: 'POST', body: JSON.stringify({ storeId, ...data }) }),
   // Photo-editor: Etsy CDN image -> dataURL (backend proxy se, CORS ke bina)
   imageData: async (url) => {
     const s = getSession()

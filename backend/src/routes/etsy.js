@@ -263,6 +263,65 @@ router.get('/taxonomy/tree', requireUser, async (req, res) => {
   catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// ---------- CREATE helpers: section / return policy / shipping profile ----------
+// (Processing profiles aur production partners Etsy par hi bante hain — API nahi deti.)
+
+// POST /api/etsy/section/create { storeId, title }
+router.post('/section/create', requireUser, async (req, res) => {
+  try {
+    const { storeId, title } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    if (!String(title || '').trim()) return res.status(400).json({ ok: false, error: 'section ka naam chahiye' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/sections`, { method: 'POST', body: form({ title: String(title).trim().slice(0, 24) }) })
+    res.json({ ok: true, id: r.shop_section_id, title: r.title })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/return-policy/create { storeId, acceptsReturns, acceptsExchanges, deadline }
+// deadline (days) sirf tab jab returns/exchanges accept hon — Etsy: 7/14/21/30/45/60/90.
+router.post('/return-policy/create', requireUser, async (req, res) => {
+  try {
+    const { storeId, acceptsReturns, acceptsExchanges, deadline } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const body = { accepts_returns: acceptsReturns ? 'true' : 'false', accepts_exchanges: acceptsExchanges ? 'true' : 'false' }
+    if (acceptsReturns || acceptsExchanges) body.return_deadline = Number(deadline) || 30
+    const r = await etsy(conn, `/shops/${conn.shop_id}/policies/return`, { method: 'POST', body: form(body) })
+    res.json({ ok: true, id: r.return_policy_id })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/shipping-profile/create
+// { storeId, title, originCountry, originZip, minProcessing, maxProcessing,
+//   primaryCost, secondaryCost, minDelivery, maxDelivery }
+// Ek "Everywhere" destination ke saath profile banta hai — details Etsy par edit ho sakti hain.
+router.post('/shipping-profile/create', requireUser, async (req, res) => {
+  try {
+    const { storeId, title, originCountry, originZip, minProcessing, maxProcessing, primaryCost, secondaryCost, minDelivery, maxDelivery } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    if (!String(title || '').trim() || !originCountry) return res.status(400).json({ ok: false, error: 'title aur origin country chahiye' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const body = {
+      title: String(title).trim(),
+      origin_country_iso: String(originCountry).toUpperCase(),
+      primary_cost: Number(primaryCost) || 0,
+      secondary_cost: Number(secondaryCost) || 0,
+      min_processing_time: Number(minProcessing) || 1,
+      max_processing_time: Number(maxProcessing) || 3,
+      destination_region: 'none',              // "everywhere else" entry
+    }
+    if (originZip) body.origin_postal_code = String(originZip)
+    if (minDelivery) body.min_delivery_days = Number(minDelivery)
+    if (maxDelivery) body.max_delivery_days = Number(maxDelivery)
+    const r = await etsy(conn, `/shops/${conn.shop_id}/shipping-profiles`, { method: 'POST', body: form(body) })
+    res.json({ ok: true, id: r.shipping_profile_id })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 // GET /api/etsy/readiness?storeId=...
 // Shop ke PROCESSING profiles (Etsy "readiness states" — e.g. Made to order: 1-2 days).
 // Ye Etsy par bante hain; API se sirf list milti hai (create ka endpoint nahi hai).

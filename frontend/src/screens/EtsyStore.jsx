@@ -283,6 +283,144 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
  * Price / quantity / variations are read-only here — they live in Etsy's
  * inventory system and get their own editor in a later milestone (E4).
  */
+/**
+ * ＋ Create-new helpers — Etsy API se SEEDHA aap ke shop me ban jate hain
+ * (sections, return policies, shipping profiles — teeno API supported hain).
+ */
+function NewSection({ storeId, onDone }) {
+  const [open, setOpen] = useState(false)
+  const [title, setTitle] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const go = async () => {
+    if (!title.trim() || title.length > 24) return
+    setBusy(true); setErr(null)
+    try { const r = await etsy.createSection(storeId, title.trim()); setOpen(false); setTitle(''); onDone(r.id) }
+    catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  if (!open) return <button className="btn sm ghost" onClick={() => setOpen(true)}>＋ New</button>
+  return (
+    <span style={{ display: 'inline-flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+      <input placeholder="Section ka naam" value={title} onChange={(e) => setTitle(e.target.value)}
+        className={title.length > 24 ? 'in-err' : ''} style={{ width: 170 }} onKeyDown={(e) => e.key === 'Enter' && go()} autoFocus />
+      <span className={title.length > 24 ? 'err-msg' : 'muted'} style={{ fontSize: 11 }}>{24 - title.length}</span>
+      <button className="btn sm" disabled={busy || !title.trim() || title.length > 24} onClick={go}>{busy ? '⏳' : 'Save'}</button>
+      <button className="btn sm ghost" onClick={() => { setOpen(false); setErr(null) }}>✕</button>
+      {err && <span className="err-msg">{err}</span>}
+    </span>
+  )
+}
+
+function NewReturnPolicy({ storeId, onDone }) {
+  const [open, setOpen] = useState(false)
+  const [rets, setRets] = useState(true)
+  const [exch, setExch] = useState(true)
+  const [days, setDays] = useState(30)
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const go = async () => {
+    setBusy(true); setErr(null)
+    try {
+      const r = await etsy.createReturnPolicy(storeId, { acceptsReturns: rets, acceptsExchanges: exch, deadline: days })
+      setOpen(false); onDone(r.id)
+    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  if (!open) return <button className="btn sm ghost" onClick={() => setOpen(true)}>＋ New</button>
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginTop: 8, maxWidth: 420 }}>
+      <b style={{ fontSize: 13.5 }}>Nayi return policy</b>
+      <div style={{ display: 'flex', gap: 16, margin: '8px 0', flexWrap: 'wrap' }}>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+          <input type="checkbox" checked={rets} onChange={(e) => setRets(e.target.checked)} /> Returns accept
+        </label>
+        <label style={{ display: 'flex', gap: 6, alignItems: 'center', cursor: 'pointer', fontSize: 13 }}>
+          <input type="checkbox" checked={exch} onChange={(e) => setExch(e.target.checked)} /> Exchanges accept
+        </label>
+      </div>
+      {(rets || exch) && (
+        <span style={{ display: 'block', marginBottom: 8 }}>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Buyer kitne din me wapas bhej sakta hai</label>
+          <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
+            {[7, 14, 21, 30, 45, 60, 90].map((d) => <option key={d} value={d}>{d} days</option>)}
+          </select>
+        </span>
+      )}
+      {!rets && !exch && <p className="muted" style={{ fontSize: 12 }}>Dono OFF = "No returns or exchanges" policy banegi.</p>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="btn sm" disabled={busy} onClick={go}>{busy ? '⏳' : 'Save policy'}</button>
+        <button className="btn sm ghost" onClick={() => { setOpen(false); setErr(null) }}>✕ Cancel</button>
+      </div>
+      {err && <p className="err-msg" style={{ marginTop: 6 }}>{err}</p>}
+    </div>
+  )
+}
+
+const SHIP_COUNTRIES = [['US', 'United States'], ['GB', 'United Kingdom'], ['CA', 'Canada'], ['AU', 'Australia'], ['DE', 'Germany'], ['FR', 'France'], ['TR', 'Turkiye'], ['PK', 'Pakistan'], ['IN', 'India'], ['AE', 'UAE'], ['NL', 'Netherlands'], ['ES', 'Spain'], ['IT', 'Italy']]
+function NewShipProfile({ storeId, onDone }) {
+  const [open, setOpen] = useState(false)
+  const [f, setF] = useState({ title: '', originCountry: 'US', originZip: '', minProcessing: 1, maxProcessing: 3, primaryCost: 0, secondaryCost: 0, minDelivery: '', maxDelivery: '' })
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState(null)
+  const u = (patch) => setF({ ...f, ...patch })
+  const go = async () => {
+    if (!f.title.trim()) return setErr('Profile ka naam likhein')
+    if (f.originCountry === 'US' && !f.originZip.trim()) return setErr('US ke liye origin ZIP code zaruri hai')
+    setBusy(true); setErr(null)
+    try { const r = await etsy.createShipProfile(storeId, f); setOpen(false); onDone(r.id) }
+    catch (e) { setErr(e.message) } finally { setBusy(false) }
+  }
+  if (!open) return <button className="btn sm ghost" onClick={() => setOpen(true)}>＋ New</button>
+  return (
+    <div style={{ border: '1px solid var(--line)', borderRadius: 10, padding: 12, marginTop: 8, maxWidth: 560 }}>
+      <b style={{ fontSize: 13.5 }}>Naya shipping profile</b> <span className="muted" style={{ fontSize: 11 }}>(ek "Everywhere" rate ke saath banta hai — mazeed destinations Etsy par add hoti hain)</span>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', margin: '10px 0' }}>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Naam</label>
+          <input value={f.title} onChange={(e) => u({ title: e.target.value })} style={{ width: 150 }} />
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Ships from</label>
+          <select value={f.originCountry} onChange={(e) => u({ originCountry: e.target.value })}>
+            {SHIP_COUNTRIES.map(([c, n]) => <option key={c} value={c}>{n}</option>)}
+          </select>
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Origin ZIP {f.originCountry === 'US' ? <b>*</b> : <span className="opt">Optional</span>}</label>
+          <input value={f.originZip} onChange={(e) => u({ originZip: e.target.value })} style={{ width: 90 }} />
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Processing (days)</label>
+          <span style={{ display: 'flex', gap: 4 }}>
+            <input type="number" min="1" value={f.minProcessing} onChange={(e) => u({ minProcessing: e.target.value })} style={{ width: 58 }} />
+            <input type="number" min="1" value={f.maxProcessing} onChange={(e) => u({ maxProcessing: e.target.value })} style={{ width: 58 }} />
+          </span>
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping price ($) — pehla item</label>
+          <input type="number" min="0" step="0.01" value={f.primaryCost} onChange={(e) => u({ primaryCost: e.target.value })} style={{ width: 84 }} />
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Har agla item ($)</label>
+          <input type="number" min="0" step="0.01" value={f.secondaryCost} onChange={(e) => u({ secondaryCost: e.target.value })} style={{ width: 84 }} />
+        </span>
+        <span>
+          <label className="muted" style={{ fontSize: 12, display: 'block' }}>Delivery days <span className="opt">Optional</span></label>
+          <span style={{ display: 'flex', gap: 4 }}>
+            <input type="number" min="1" placeholder="min" value={f.minDelivery} onChange={(e) => u({ minDelivery: e.target.value })} style={{ width: 58 }} />
+            <input type="number" min="1" placeholder="max" value={f.maxDelivery} onChange={(e) => u({ maxDelivery: e.target.value })} style={{ width: 58 }} />
+          </span>
+        </span>
+      </div>
+      <p className="muted" style={{ fontSize: 11.5, margin: '0 0 8px' }}>0 / 0 rakhein to FREE shipping profile banta hai.</p>
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button className="btn sm" disabled={busy} onClick={go}>{busy ? '⏳' : 'Save profile'}</button>
+        <button className="btn sm ghost" onClick={() => { setOpen(false); setErr(null) }}>✕ Cancel</button>
+      </div>
+      {err && <p className="err-msg" style={{ marginTop: 6 }}>{err}</p>}
+    </div>
+  )
+}
+
 function EtsyEdit({ storeId, detail, onDone, onCancel }) {
   const [title, setTitle] = useState(detail.title || '')
   const [desc, setDesc] = useState(detail.description || '')
@@ -582,10 +720,13 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
 
           <span style={{ display: 'block', marginBottom: 12 }}>
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shipping profile</label>
-            <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 230 }}>
-              {!shipProfiles && <option value="">⏳</option>}
-              {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
-            </select>
+            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <select value={shipId || ''} onChange={(e) => setShipId(e.target.value)} style={{ minWidth: 230 }}>
+                {!shipProfiles && <option value="">⏳</option>}
+                {(shipProfiles || []).map((p) => <option key={p.id} value={p.id}>🚚 {p.title}</option>)}
+              </select>
+              <NewShipProfile storeId={storeId} onDone={(id) => { etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => {}); setShipId(String(id)) }} />
+            </span>
           </span>
 
           {/* Item weight + dimensions (Optional — package estimate ke liye) */}
@@ -622,10 +763,13 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
           {/* Return policy — Etsy par physical listing ke liye REQUIRED */}
           <span style={{ display: 'block' }}>
             <label className={errs.shipping ? 'err-msg' : 'muted'} style={{ fontSize: 12, display: 'block' }}>Return policy <b>*</b></label>
-            <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} className={errs.shipping ? 'in-err' : ''} style={{ minWidth: 240 }}>
-              <option value="">— choose (zaruri) —</option>
-              {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
+            <span style={{ display: 'inline-flex', gap: 8, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+              <select value={retId || ''} onChange={(e) => setRetId(e.target.value)} className={errs.shipping ? 'in-err' : ''} style={{ minWidth: 240 }}>
+                <option value="">— choose (zaruri) —</option>
+                {(retPolicies || []).map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+              </select>
+              <NewReturnPolicy storeId={storeId} onDone={(id) => { etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => {}); setRetId(String(id)) }} />
+            </span>
             {errs.shipping && <p className="err-msg" style={{ margin: '6px 0 0' }}>{errs.shipping}</p>}
           </span>
 
@@ -781,11 +925,14 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
         {/* Section — shop ke asli sections */}
         <span>
           <label className="muted" style={{ fontSize: 12, display: 'block' }}>Section <span className="opt">Optional</span></label>
-          <select value={sectionId || ''} onChange={(e) => setSectionId(e.target.value)} style={{ minWidth: 200 }}>
-            <option value="">— koi section nahi —</option>
-            {(sections || []).map((sx) => <option key={sx.id} value={sx.id}>{sx.title}</option>)}
-          </select>
-          {!sections && <span className="muted" style={{ fontSize: 11 }}> ⏳</span>}
+          <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <select value={sectionId || ''} onChange={(e) => setSectionId(e.target.value)} style={{ minWidth: 200 }}>
+              <option value="">— koi section nahi —</option>
+              {(sections || []).map((sx) => <option key={sx.id} value={sx.id}>{sx.title}</option>)}
+            </select>
+            {!sections && <span className="muted" style={{ fontSize: 11 }}>⏳</span>}
+            <NewSection storeId={storeId} onDone={(id) => { etsy.sections(storeId).then((r) => setSections(r.sections)).catch(() => {}); setSectionId(String(id)) }} />
+          </span>
         </span>
 
         <p className="muted" style={{ fontSize: 12, marginTop: 14 }}>Sab kuch neeche 💾 Save to Etsy se save hota hai.</p>
