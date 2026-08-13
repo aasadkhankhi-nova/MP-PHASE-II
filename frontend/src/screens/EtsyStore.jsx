@@ -533,7 +533,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
            par chalte hain (mounted rehta hai), bas columns badalte hain ---- */}
       <div style={{ display: ['price', 'inventory', 'variations'].includes(tab) ? '' : 'none' }}>
         <InventoryEditor storeId={storeId} listingId={detail.id} currency={detail.currency}
-          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} onCount={setVarCount} />
+          mode={tab === 'price' ? 'price' : tab === 'inventory' ? 'qty' : 'full'} onCount={setVarCount} images={detail.images || []} />
       </div>
 
       {/* ---- Personalization ---- */}
@@ -771,7 +771,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel }) {
  */
 // mode: 'price' (sirf price), 'qty' (quantity+SKU), 'full' (sab kuch — Variations tab)
 // onCount(n) — parent ko combos ki tadaad batata hai (399 se zyada = red dot warning)
-function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount }) {
+function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount, images = [] }) {
   const showPrice = mode === 'price' || mode === 'full'
   const showQty = mode === 'qty' || mode === 'full'
   const TITLE = mode === 'price' ? '💲 Price' : mode === 'qty' ? '📦 Inventory' : '🧩 Variations'
@@ -781,13 +781,48 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
   const [bulkQty, setBulkQty] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
+  // ---- Vela-style Variations sub-tabs ----
+  const [vtab, setVtab] = useState('vars')   // vars|price|qty|sku|vis|photos|proc
+  const [pOn, setPOn] = useState([])         // kin properties par price INDIVIDUAL hai
+  const [qOn, setQOn] = useState([])         // ... quantity
+  const [sOn, setSOn] = useState([])         // ... SKU
+  const [vDirty, setVDirty] = useState(false)
+  const [addIn, setAddIn] = useState({})     // "Add option" inputs (per property)
+  const [varImgs, setVarImgs] = useState(null)  // Etsy par maujuda variation-photo links
+  const [links, setLinks] = useState([])        // editable copy
+  const [photoProp, setPhotoProp] = useState(null)
 
   useEffect(() => {
     setInv(null); setMsg(null)
     etsy.inventory(storeId, listingId)
-      .then((r) => { setInv(r); setRows(r.products.map((p) => ({ ...p }))); onCount && onCount(r.products.length) })
+      .then((r) => {
+        setInv(r); setRows(r.products.map((p) => ({ ...p })))
+        setPOn(r.priceOnProperty || []); setQOn(r.quantityOnProperty || []); setSOn(r.skuOnProperty || [])
+        onCount && onCount(r.products.length)
+      })
       .catch((e) => setMsg('⚠ ' + e.message))
   }, [storeId, listingId])
+
+  // variation-photo links (Photos sub-tab)
+  useEffect(() => {
+    if (mode !== 'full') return
+    etsy.varImages(storeId, listingId)
+      .then((r) => { setVarImgs(r.links); setLinks(r.links) })
+      .catch(() => { setVarImgs([]); setLinks([]) })
+  }, [storeId, listingId, mode])
+
+  // properties + unke options (rows se nikalte hain)
+  const plist = useMemo(() => {
+    const list = []
+    for (const r of rows) for (const pv of r.propertyValues || []) {
+      let P = list.find((x) => x.id === pv.property_id)
+      if (!P) { P = { id: pv.property_id, name: pv.property_name, options: [] }; list.push(P) }
+      const val = (pv.values || []).join(', ')
+      if (!P.options.some((o) => o.value === val)) P.options.push({ value: val, valueId: (pv.value_ids || [])[0] || null })
+    }
+    return list
+  }, [rows])
+  useEffect(() => { if (photoProp === null && plist.length) setPhotoProp(plist[0].id) }, [plist, photoProp])
 
   const upd = (i, patch) => setRows(rows.map((r, x) => (x === i ? { ...r, ...patch } : r)))
   const priceVaries = (inv?.priceOnProperty || []).length > 0
@@ -912,51 +947,221 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
     )
   }
 
-  // variations table
+  // ---------- helpers: Vela-style Variations sub-tabs ----------
+  const relabel = (pvs) => pvs.map((pv) => (pv.values || []).join(', ')).join(' / ') || '—'
+
+  const groupRows = (varyIds) => {
+    const m = new Map()
+    rows.forEach((r, i) => {
+      const key = (r.propertyValues || []).filter((pv) => varyIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ') || '—'
+      if (!m.has(key)) m.set(key, [])
+      m.get(key).push(i)
+    })
+    return [...m.entries()]
+  }
+  const setGroup = (field, idxs, v) => { setRows(rows.map((r, i) => (idxs.includes(i) ? { ...r, [field]: v } : r))); setVDirty(true) }
+
+  // option DELETE: us option ke sab combos hat jate hain (Save par Etsy par jata hai)
+  const delOption = (P, value) => {
+    if (P.options.length <= 1) return setMsg('⚠ Property ka aakhri option delete nahi ho sakta')
+    const left = rows.filter((r) => !(r.propertyValues || []).some((pv) => pv.property_id === P.id && (pv.values || []).join(', ') === value))
+    if (!left.length) return setMsg('⚠ Aakhri combo delete nahi ho sakta')
+    setRows(left); setVDirty(true)
+    setMsg('🗑 Option hata — 💾 Save variations dabane par Etsy par jayega')
+  }
+
+  // option ADD: baqi properties ke har combo ke saath naya product ban jata hai
+  const addOption = (P) => {
+    const name = (addIn[P.id] || '').trim()
+    if (!name) return
+    if (P.options.some((o) => o.value.toLowerCase() === name.toLowerCase())) return setMsg('⚠ Ye option pehle se hai')
+    const otherIds = plist.filter((x) => x.id !== P.id).map((x) => x.id)
+    const seen = new Set(); const add = []
+    for (const r of rows) {
+      const key = (r.propertyValues || []).filter((pv) => otherIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
+      if (seen.has(key)) continue
+      seen.add(key)
+      const pvs = (r.propertyValues || []).map((pv) => (pv.property_id === P.id ? { property_id: P.id, property_name: P.name, value_ids: [], values: [name] } : pv))
+      add.push({ ...r, propertyValues: pvs, label: relabel(pvs), enabled: true })
+    }
+    if (rows.length + add.length > 400) return setMsg('⚠ Should not exceed 400 options combinations')
+    setRows([...rows, ...add]); setAddIn({ ...addIn, [P.id]: '' }); setVDirty(true)
+    setMsg(`＋ "${name}" add hua (${add.length} naye combos) — 💾 Save variations dabayein`)
+  }
+
+  // EK Save: structure + price + quantity + SKU + visibility (replace-all on Etsy)
+  const saveAll = async () => {
+    setBusy(true); setMsg(null)
+    try {
+      // normalize: jo cheez Individual NAHI hai wo apne group ki EK value share kare
+      const out = rows.map((r) => ({ ...r }))
+      const norm = (field, onIds) => {
+        const m = new Map()
+        out.forEach((r) => {
+          const key = (r.propertyValues || []).filter((pv) => onIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
+          if (!m.has(key)) m.set(key, r[field])
+          r[field] = m.get(key)
+        })
+      }
+      norm('price', pOn); norm('quantity', qOn); norm('sku', sOn)
+      for (const r of out) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho')
+      await etsy.saveInventory(storeId, listingId, { priceOnProperty: pOn, quantityOnProperty: qOn, skuOnProperty: sOn, products: out })
+      setVDirty(false)
+      setMsg('✅ Variations Etsy par save ho gayin')
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
+
+  // variation-photo link set/clear (sirf screen par — Save photos se Etsy par jata hai)
+  const setLink = (valueId, imageId) => {
+    setLinks((cur) => {
+      const rest = cur.filter((l) => !(l.propertyId === photoProp && String(l.valueId) === String(valueId)))
+      return imageId ? [...rest, { propertyId: photoProp, valueId, imageId }] : rest
+    })
+  }
+  const savePhotos = async () => {
+    setBusy(true); setMsg(null)
+    try { await etsy.saveVarImages(storeId, listingId, links); setVarImgs(links); setMsg('✅ Variation photos Etsy par save ho gayin') }
+    catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
+  }
+
+  // ---------- VARIATIONS tab (Vela-style sub-tabs) ----------
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>{TITLE} <span className="chip">{rows.length} combos</span></h3>
+      <h3 style={{ marginTop: 0 }}>Variations <span className="chip">{rows.length} combos</span></h3>
       {rows.length > 399 && (
-        <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>
-          ⚠ Etsy sirf 399 variations tak accept karta hai — abhi {rows.length} hain, kuch combos off/kam karein.
-        </p>
+        <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>⚠ Should not exceed 400 options combinations — abhi {rows.length} hain.</p>
       )}
-      <p className="muted" style={{ fontSize: 12 }}>
-        {showPrice && (priceVaries ? 'Price har combo ki alag hai.' : 'Price sab combos ki EK hai (Etsy ka rule — pehli row ki price sab par lagegi).')}
-        {showQty && <> Quantity {qtyVaries ? 'har combo ki alag.' : 'sab ki ek.'}</>}
-      </p>
 
-      {/* bulk row — set everything at once */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', marginBottom: 10 }}>
-        <span className="muted" style={{ fontSize: 12 }}>Sab par lagao:</span>
-        {showPrice && <input type="number" placeholder="price" step="0.01" value={bulkPrice} onChange={(e) => setBulkPrice(e.target.value)} style={{ width: 100 }} />}
-        {showQty && <input type="number" placeholder="qty" value={bulkQty} onChange={(e) => setBulkQty(e.target.value)} style={{ width: 90 }} />}
-        <button className="btn sm ghost" onClick={applyBulk}>Apply to all</button>
-      </div>
-
-      {/* one row per combo */}
-      <div style={{ maxHeight: 420, overflow: 'auto', border: '1px solid var(--line)', borderRadius: 10 }}>
-        {rows.map((r, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '7px 10px', borderBottom: '1px solid var(--line)', opacity: r.enabled ? 1 : 0.5 }}>
-            <b className="ellip" style={{ flex: 1, minWidth: 120, fontSize: 13 }}>{r.label}</b>
-            {showPrice && <input type="number" step="0.01" title="price" value={r.price || ''} disabled={!priceVaries && i > 0}
-              onChange={(e) => upd(i, { price: e.target.value })} style={{ width: 90 }} />}
-            {showQty && <input type="number" title="quantity" value={r.quantity} disabled={!qtyVaries && i > 0}
-              onChange={(e) => upd(i, { quantity: e.target.value })} style={{ width: 80 }} />}
-            {showQty && <input title="SKU" placeholder="SKU" value={r.sku} onChange={(e) => upd(i, { sku: e.target.value })} style={{ width: 110 }} />}
-            {/* on/off = is this combo buyable (visible) on Etsy */}
-            {mode === 'full' && (
-              <label style={{ display: 'flex', gap: 4, alignItems: 'center', fontSize: 12 }} className="muted">
-                <input type="checkbox" checked={r.enabled} onChange={(e) => upd(i, { enabled: e.target.checked })} /> on
-              </label>
-            )}
-          </div>
+      {/* sub-tabs (Vela jaisa) */}
+      <div className="vtabs">
+        {[['vars', 'Variations'], ['price', 'Price'], ['qty', 'Quantity'], ['sku', 'SKU'], ['vis', 'Visibility'], ['photos', 'Photos'], ['proc', 'Processing']].map(([id, label]) => (
+          <button key={id} className={'vtab' + (vtab === id ? ' on' : '')} onClick={() => setVtab(id)}>{label}</button>
         ))}
       </div>
 
-      <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
-        <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : '💾 Save'}</button>
-      </div>
+      {/* --- Variations: har property ka panel — options + Add/Delete --- */}
+      {vtab === 'vars' && (
+        <div className="vpanels">
+          {plist.map((P) => (
+            <div key={P.id} className="vpanel">
+              <div className="vpanel-head"><b>{P.name}</b><span className="chip">{P.options.length}</span></div>
+              <div className="vopt-list">
+                {P.options.map((o) => (
+                  <div key={o.value} className="vopt">
+                    <span className="ellip">{o.value}</span>
+                    <button className="ph-tool" title="Delete option" onClick={() => delOption(P, o.value)}>🗑</button>
+                  </div>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                <input placeholder="Add option" value={addIn[P.id] || ''} onChange={(e) => setAddIn({ ...addIn, [P.id]: e.target.value })}
+                  onKeyDown={(e) => e.key === 'Enter' && addOption(P)} style={{ flex: 1 }} />
+                <button className="btn sm ghost" onClick={() => addOption(P)}>Add</button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* --- Price / Quantity / SKU: "Individual ..." checkbox per property.
+            OFF = general section (upar wale Price/Inventory tab) wali value
+            sab par lagti hai; ON = yahan alag-alag set hoti hai --- */}
+      {(vtab === 'price' || vtab === 'qty' || vtab === 'sku') && (() => {
+        const conf = {
+          price: { on: pOn, set: setPOn, field: 'price', label: 'price', general: 'Individual OFF hai — upar wale Price tab ki EK price sab combos par lagti hai.' },
+          qty: { on: qOn, set: setQOn, field: 'quantity', label: 'quantity', general: 'Individual OFF hai — Inventory tab ki EK quantity sab par lagti hai.' },
+          sku: { on: sOn, set: setSOn, field: 'sku', label: 'SKU', general: 'Individual OFF hai — Inventory tab (general) wala SKU sab par lagta hai, yahan kuch karna zaruri nahi.' },
+        }[vtab]
+        return (
+          <div>
+            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
+              {plist.map((P) => (
+                <label key={P.id} style={{ display: 'flex', gap: 7, alignItems: 'center', cursor: 'pointer', fontWeight: 600, fontSize: 13.5 }}>
+                  <input type="checkbox" checked={conf.on.includes(P.id)}
+                    onChange={() => { conf.set(conf.on.includes(P.id) ? conf.on.filter((x) => x !== P.id) : [...conf.on, P.id]); setVDirty(true) }} />
+                  Individual {conf.label} — {P.name}
+                </label>
+              ))}
+            </div>
+            {!conf.on.length && <p className="muted" style={{ fontSize: 12 }}>{conf.general}</p>}
+            {conf.on.length > 0 && (
+              <div className="vrows">
+                {groupRows(conf.on).map(([label, idxs]) => (
+                  <div key={label} className="vrow">
+                    <span className="ellip" style={{ flex: 1 }}>{label}</span>
+                    {vtab === 'sku'
+                      ? <input value={rows[idxs[0]].sku} onChange={(e) => setGroup('sku', idxs, e.target.value)} style={{ width: 190 }} />
+                      : <input type="number" step={vtab === 'price' ? '0.01' : '1'} value={rows[idxs[0]][conf.field] ?? ''} onChange={(e) => setGroup(conf.field, idxs, e.target.value)} style={{ width: 110 }} />}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })()}
+
+      {/* --- Visibility: har combo ka on/off toggle (Vela jaisa) --- */}
+      {vtab === 'vis' && (
+        <div className="vrows">
+          {rows.map((r, i) => (
+            <div key={i} className="vrow" style={{ opacity: r.enabled ? 1 : 0.55 }}>
+              <span className="ellip" style={{ flex: 1 }}>{r.label}</span>
+              <button className={'vswitch' + (r.enabled ? ' on' : '')} onClick={() => { upd(i, { enabled: !r.enabled }); setVDirty(true) }} title={r.enabled ? 'On' : 'Off'} />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* --- Photos: option par listing ki photo LINK karo — buyer jab Etsy par
+            wo option chunega (e.g. Sweatshirt) to WAHI photo saamne aa jayegi --- */}
+      {vtab === 'photos' && (
+        <div>
+          <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 10, flexWrap: 'wrap' }}>
+            <select value={photoProp || ''} onChange={(e) => setPhotoProp(Number(e.target.value))}>
+              {plist.map((P) => <option key={P.id} value={P.id}>{P.name}</option>)}
+            </select>
+            <span className="muted" style={{ fontSize: 12 }}>Har option par uski photo click kar ke lagayein (dobara click = hatao)</span>
+          </div>
+          {varImgs === null && <p className="muted">⏳ maujuda photo-links load ho rahe hain…</p>}
+          {varImgs !== null && (plist.find((P) => P.id === photoProp)?.options || []).map((o) => {
+            const cur = links.find((l) => l.propertyId === photoProp && String(l.valueId) === String(o.valueId))
+            return (
+              <div key={o.value} className="vrow" style={{ alignItems: 'center' }}>
+                <span className="ellip" style={{ width: 150, fontWeight: 600 }}>{o.value}</span>
+                {!o.valueId && <span className="muted" style={{ fontSize: 12 }}>naya option — pehle 💾 Save variations karein, phir photo lag sakegi</span>}
+                {o.valueId && (
+                  <span className="vphotos">
+                    {(images || []).map((im) => (
+                      <img key={im.id} src={im.url} alt="" className={'vphoto' + (cur && String(cur.imageId) === String(im.id) ? ' sel' : '')}
+                        onClick={() => setLink(o.valueId, cur && String(cur.imageId) === String(im.id) ? null : im.id)} />
+                    ))}
+                  </span>
+                )}
+              </div>
+            )
+          })}
+          <div style={{ marginTop: 10 }}>
+            <button className="btn" disabled={busy || varImgs === null} onClick={savePhotos}>{busy ? '⏳' : '💾 Save variation photos'}</button>
+          </div>
+        </div>
+      )}
+
+      {/* --- Processing: Etsy API me per-variation processing nahi hota --- */}
+      {vtab === 'proc' && (
+        <p className="muted" style={{ fontSize: 13 }}>
+          Processing time Etsy me shipping/readiness profile ke saath aata hai — Etsy ki API per-variation
+          processing set karne ki ijazat nahi deti. General profile <b>Shipping</b> tab me set hota hai;
+          jab Etsy API me support aayega, "Individual PP" yahan khul jayega.
+        </p>
+      )}
+
+      {/* footer: EK Save — structure + price + quantity + SKU + visibility */}
+      {vtab !== 'photos' && vtab !== 'proc' && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button className="btn" disabled={busy} onClick={saveAll}>{busy ? '⏳ Saving…' : '💾 Save variations'}</button>
+          {vDirty && <span className="muted" style={{ fontSize: 12 }}>⚠ Changes abhi sirf yahan hain — Save dabane par Etsy par jayenge.</span>}
+        </div>
+      )}
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )

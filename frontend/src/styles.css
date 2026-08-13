@@ -234,3 +234,27 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .opt { color: var(--mut); font-weight: 400; font-size: 11px; margin-left: 4px; }
 .attr-multi { border: 1px solid var(--line); border-radius: 10px; background: #fafbfe; max-height: 180px; overflow: auto; padding: 6px 10px; display: flex; flex-direction: column; gap: 2px; margin-top: 4px; }
 .attr-multi label { display: flex; gap: 8px; align-items: center; font-size: 13px; padding: 4px 2px; cursor: pointer; }
+
+/* ---- Variations: Vela-style sub-tabs ---- */
+.vtabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin-bottom: 14px; overflow-x: auto; }
+.vtab { background: none; border: none; border-bottom: 2.5px solid transparent; padding: 9px 12px; font-size: 13px; font-weight: 600; color: var(--mut); cursor: pointer; white-space: nowrap; font-family: inherit; }
+.vtab:hover { color: var(--txt); }
+.vtab.on { color: var(--txt); border-bottom-color: var(--accent); }
+.vpanels { display: flex; gap: 16px; flex-wrap: wrap; }
+.vpanel { flex: 1; min-width: 260px; max-width: 480px; border: 1px solid var(--line); border-radius: 12px; padding: 12px; }
+.vpanel-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.vopt-list { max-height: 260px; overflow: auto; border: 1px solid var(--line); border-radius: 9px; }
+.vopt { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 8px 10px; font-size: 13.5px; }
+.vopt:nth-child(odd) { background: #f8f9fc; }
+.vrows { max-height: 420px; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.vrow { display: flex; gap: 10px; align-items: center; padding: 8px 12px; border-bottom: 1px solid var(--line); font-size: 13.5px; }
+.vrow:last-child { border-bottom: none; }
+.vrow:nth-child(odd) { background: #f8f9fc; }
+.vswitch { width: 38px; height: 21px; border-radius: 21px; border: none; background: #ccd2e0; cursor: pointer; position: relative; flex-shrink: 0; transition: background .15s; }
+.vswitch::after { content: ''; position: absolute; top: 2.5px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: #fff; transition: left .15s; }
+.vswitch.on { background: var(--accent); }
+.vswitch.on::after { left: 19px; }
+.vphotos { display: flex; gap: 5px; flex-wrap: wrap; }
+.vphoto { width: 42px; height: 42px; border-radius: 7px; object-fit: cover; cursor: pointer; border: 2px solid transparent; }
+.vphoto:hover { border-color: #b9c4f5; }
+.vphoto.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }

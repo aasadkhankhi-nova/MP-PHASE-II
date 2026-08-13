@@ -665,6 +665,33 @@ router.post('/inventory/update', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
+// GET /api/etsy/varimages?storeId=...&id=...
+// Kis variation-option par kaunsi photo linki hui hai (buyer option chune to wahi dikhe).
+router.get('/varimages', requireUser, async (req, res) => {
+  try {
+    const { storeId, id } = req.query
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const r = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/variation-images`)
+    res.json({ ok: true, links: (r.results || []).map((x) => ({ propertyId: x.property_id, valueId: x.value_id, imageId: x.image_id })) })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/varimages { storeId, id, links: [{propertyId, valueId, imageId}] }
+// REPLACES the listing's variation-image links (Etsy updateVariationImages).
+router.post('/varimages', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, links = [] } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const body = { variation_images: links.map((l) => ({ property_id: Number(l.propertyId), value_id: Number(l.valueId), image_id: Number(l.imageId) })) }
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/variation-images`, { method: 'POST', body: JSON.stringify(body) })
+    res.json({ ok: true })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
 // ---------- 9. EDIT (E5): photos, video, publish ----------
 
 // helper: turn a dataUrl into {bytes, mime}
