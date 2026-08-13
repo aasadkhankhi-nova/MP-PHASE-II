@@ -1322,6 +1322,29 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
     } finally { setBusy(false) }
   }
 
+  // Publish ke waqt inventory push hota hai (agar kuch badla ho) — replace-all on Etsy
+  const pushInventory = async () => {
+    // normalize: jo cheez Individual NAHI hai wo apne group ki EK value share kare
+    const out = rows.map((r) => ({ ...r }))
+    const norm = (field, onIds) => {
+      const m = new Map()
+      out.forEach((r) => {
+        const key = (r.propertyValues || []).filter((pv) => onIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
+        if (!m.has(key)) m.set(key, r[field])
+        r[field] = m.get(key)
+      })
+    }
+    norm('price', pOn); norm('quantity', qOn); norm('sku', sOn)
+    for (const r of out) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho (Price/Variations section)')
+    await etsy.saveInventory(storeId, listingId, { priceOnProperty: pOn, quantityOnProperty: qOn, skuOnProperty: sOn, products: out })
+    setVDirty(false)
+  }
+  useEffect(() => {
+    if (!reg) return
+    reg.current.inventory = async () => { if (vDirty) await pushInventory() }
+    return () => { if (reg) delete reg.current.inventory }
+  })
+
   if (!inv) return <div className="card"><p className="muted">{msg || '⏳ Variations load ho rahi hain…'}</p></div>
 
   // ---- PRICE section — Etsy/Vela jaisa: ek field; variation-wise ho to
@@ -1412,28 +1435,6 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
     setMsg(`＋ "${name}" add hua (${add.length} naye combos) — neeche Publish dabayein`)
   }
 
-  // Publish ke waqt inventory push hota hai (agar kuch badla ho) — replace-all on Etsy
-  const pushInventory = async () => {
-    // normalize: jo cheez Individual NAHI hai wo apne group ki EK value share kare
-    const out = rows.map((r) => ({ ...r }))
-    const norm = (field, onIds) => {
-      const m = new Map()
-      out.forEach((r) => {
-        const key = (r.propertyValues || []).filter((pv) => onIds.includes(pv.property_id)).map((pv) => (pv.values || []).join(', ')).join(' / ')
-        if (!m.has(key)) m.set(key, r[field])
-        r[field] = m.get(key)
-      })
-    }
-    norm('price', pOn); norm('quantity', qOn); norm('sku', sOn)
-    for (const r of out) if (!r.price || Number(r.price) <= 0) throw new Error('Har combo ki price 0 se zyada ho (Price/Variations section)')
-    await etsy.saveInventory(storeId, listingId, { priceOnProperty: pOn, quantityOnProperty: qOn, skuOnProperty: sOn, products: out })
-    setVDirty(false)
-  }
-  useEffect(() => {
-    if (!reg) return
-    reg.current.inventory = async () => { if (vDirty) await pushInventory() }
-    return () => { if (reg) delete reg.current.inventory }
-  })
 
   // variation-photo link set/clear (sirf screen par — Save photos se Etsy par jata hai)
   const setLink = (valueId, imageId) => {
