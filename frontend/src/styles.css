@@ -172,3 +172,23 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 /* ---- Choose Profile bar on the edit page — hamari BLUE theme (Vela ka design, apna color) ---- */
 .profile-bar { background: var(--accent-soft); border: 1px solid #d4dcfb; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .profile-bar select { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-weight: 600; min-width: 190px; font-family: inherit; }
+
+/* ---- Vela-style photo manager ---- */
+.ph-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.ph-item { position: relative; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; aspect-ratio: 1; background: #fff; cursor: grab; }
+.ph-item:first-child { grid-column: span 2; grid-row: span 2; }   /* pehla = bara thumbnail */
+.ph-item:active { cursor: grabbing; }
+.ph-item img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.ph-item.dropat { outline: 2.5px solid var(--accent); outline-offset: -2.5px; }
+.ph-tools { position: absolute; top: 6px; right: 6px; display: none; gap: 2px; background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 2px; box-shadow: 0 2px 8px rgba(20,30,60,.12); }
+.ph-item:hover .ph-tools { display: flex; }
+.ph-tool { border: none; background: none; cursor: pointer; font-size: 13px; padding: 4px 6px; border-radius: 6px; line-height: 1; font-family: inherit; }
+.ph-tool:hover { background: var(--accent-soft); }
+.ph-menu { position: absolute; top: 30px; right: 0; background: #fff; border: 1px solid var(--line); border-radius: 9px; box-shadow: 0 8px 22px rgba(20,30,60,.15); display: flex; flex-direction: column; min-width: 122px; z-index: 45; overflow: hidden; }
+.ph-menu button { background: none; border: none; padding: 9px 13px; text-align: left; cursor: pointer; font-size: 13px; font-family: inherit; }
+.ph-menu button:hover { background: var(--accent-soft); }
+.ph-warn { position: absolute; bottom: 6px; left: 6px; background: #fff; border: 1px solid var(--line); border-radius: 7px; font-size: 12px; padding: 1px 5px; }
+.ph-alt { position: absolute; bottom: 6px; right: 6px; background: #fff; border: 1px solid var(--line); border-radius: 7px; font-size: 11px; font-weight: 700; padding: 3px 6px; cursor: pointer; display: none; font-family: inherit; }
+.ph-item:hover .ph-alt { display: block; }
+.ph-upload { border: 1.6px solid var(--accent); color: var(--accent); border-radius: 10px; aspect-ratio: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; font-weight: 600; cursor: pointer; background: #fff; font-size: 13px; }
+.ph-upload:hover { background: var(--accent-soft); }

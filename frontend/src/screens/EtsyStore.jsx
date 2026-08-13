@@ -768,79 +768,154 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount 
 }
 
 /**
- * PhotosEditor (E5) — manage the listing's photos on Etsy:
- * upload new (max 10 total), delete, and reorder with ← → arrows
- * (order is saved with one button so you can arrange first, save once).
+ * PhotosEditor (Vela-style) — Etsy allows 20 photos per listing (Aug 2025 se).
+ * - pehli photo BARA thumbnail (left), baqi chhoti tiles
+ * - photo PAKAR kar (drag) kisi bhi jagah chhorein — INSERT hota hai:
+ *   pic 5 ko pic 2 par rakha -> purani 2 -> 3, 3 -> 4, ... aur naya
+ *   order Etsy par KHUD save ho jata hai
+ * - mouse hover par corner tools: ✎ edit (page baad me), 🗑 delete,
+ *   ⋯ menu (Replace / Download); bottom-right A≡ = alt text
+ * - bottom-left ⚠ = alt text khali hai
+ * - aakhir me EK hi Upload box — jab tak 20 puri na hon
  */
+const MAX_PHOTOS = 20
 function PhotosEditor({ storeId, listingId, initial }) {
-  const [imgs, setImgs] = useState(initial)   // [{id, url}]
-  const [dirty, setDirty] = useState(false)   // order changed but not saved yet
+  const [imgs, setImgs] = useState(initial)   // [{id, url, full, alt}]
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [drag, setDrag] = useState(null)      // kaunsi photo pakri hui hai (index)
+  const [over, setOver] = useState(null)      // kis par chhorne wale hain (index)
+  const [menu, setMenu] = useState(null)      // kis photo ka ⋯ menu khula hai (id)
+  const [altFor, setAltFor] = useState(null)  // kis photo ka alt editor khula hai (id)
+  const [altTxt, setAltTxt] = useState('')
+  const repRef = React.useRef(null)           // Replace ke liye chhupa file input
+  const repIdx = React.useRef(-1)
 
-  const move = (i, d) => {
-    const j = i + d
-    if (j < 0 || j >= imgs.length) return
-    const a = [...imgs]; const t = a[i]; a[i] = a[j]; a[j] = t
-    setImgs(a); setDirty(true)
-  }
+  const read = (f) => new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
 
-  const saveOrder = async () => {
-    setBusy(true); setMsg(null)
-    try {
-      await etsy.orderImages(storeId, listingId, imgs.map((x) => x.id))
-      setDirty(false); setMsg('✅ Order save ho gaya')
-    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  // ---- drag & drop: nikaal kar nayi jagah INSERT + auto-save ----
+  const drop = async (to) => {
+    const from = drag
+    setDrag(null); setOver(null)
+    if (from === null || to === null || from === to) return
+    const a = [...imgs]
+    const [m] = a.splice(from, 1)
+    a.splice(to, 0, m)
+    setImgs(a)
+    setBusy(true); setMsg('⏳ naya order Etsy par save ho raha hai…')
+    try { await etsy.orderImages(storeId, listingId, a.map((x) => x.id)); setMsg('✅ Order Etsy par save ho gaya') }
+    catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
   const del = async (im) => {
+    setMenu(null)
     if (!confirm('Ye photo Etsy listing se delete karni hai?')) return
     setBusy(true); setMsg(null)
-    try {
-      await etsy.delImage(storeId, listingId, im.id)
-      setImgs(imgs.filter((x) => x.id !== im.id))
-      setMsg('🗑 Photo delete ho gayi')
-    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+    try { await etsy.delImage(storeId, listingId, im.id); setImgs(imgs.filter((x) => x.id !== im.id)); setMsg('🗑 Photo delete ho gayi') }
+    catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
   const upload = async (files) => {
     setBusy(true); setMsg(null)
     try {
-      for (const f of Array.from(files).slice(0, 10 - imgs.length)) {
-        const dataUrl = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
-        const res = await etsy.addImage(storeId, listingId, dataUrl, imgs.length + 1)
-        setImgs((cur) => [...cur, { id: res.imageId, url: dataUrl }])
+      let cur = imgs
+      for (const f of Array.from(files).slice(0, MAX_PHOTOS - imgs.length)) {
+        const dataUrl = await read(f)
+        const res = await etsy.addImage(storeId, listingId, dataUrl, cur.length + 1)
+        cur = [...cur, { id: res.imageId, url: dataUrl, full: null, alt: '' }]
+        setImgs(cur)
       }
       setMsg('✅ Upload ho gaya')
     } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
+  // Replace = purani delete + nayi USI position par + order dobara save
+  const replace = async (f) => {
+    const i = repIdx.current
+    if (!f || i < 0) return
+    setBusy(true); setMsg('⏳ photo replace ho rahi hai…')
+    try {
+      const old = imgs[i]
+      const dataUrl = await read(f)
+      await etsy.delImage(storeId, listingId, old.id)
+      const res = await etsy.addImage(storeId, listingId, dataUrl, i + 1)
+      const a = imgs.map((x, xi) => (xi === i ? { id: res.imageId, url: dataUrl, full: null, alt: '' } : x))
+      setImgs(a)
+      await etsy.orderImages(storeId, listingId, a.map((x) => x.id))
+      setMsg('✅ Photo replace ho gayi')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false); repIdx.current = -1 }
+  }
+
+  const saveAlt = async () => {
+    const i = imgs.findIndex((x) => x.id === altFor)
+    if (i < 0) return
+    setBusy(true)
+    try {
+      await etsy.setAlt(storeId, listingId, altFor, altTxt, i + 1)
+      setImgs(imgs.map((x) => (x.id === altFor ? { ...x, alt: altTxt } : x)))
+      setAltFor(null); setMsg('✅ Alt text Etsy par save ho gaya')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/10</span></h3>
-      <div className="grid">
+      <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/{MAX_PHOTOS}</span> {busy && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}</h3>
+      <p className="muted" style={{ fontSize: 12 }}>Photo pakar kar kisi bhi jagah chhorein — order Etsy par khud save ho jata hai. ⚠ = alt text nahi hai.</p>
+      <div className="ph-grid">
         {imgs.map((im, i) => (
-          <div key={im.id} className="card item-card">
-            <div className="thumb"><img src={im.url} alt="" /></div>
-            <div style={{ display: 'flex', gap: 4, marginTop: 6, justifyContent: 'center' }}>
-              <button className="btn sm ghost" disabled={busy || i === 0} onClick={() => move(i, -1)}>←</button>
-              <span className="chip">{i + 1}</span>
-              <button className="btn sm ghost" disabled={busy || i === imgs.length - 1} onClick={() => move(i, 1)}>→</button>
-              <button className="btn sm danger" disabled={busy} onClick={() => del(im)}>🗑</button>
+          <div key={im.id}
+            className={'ph-item' + (over === i && drag !== null && drag !== i ? ' dropat' : '')}
+            draggable={!busy}
+            onDragStart={() => setDrag(i)}
+            onDragOver={(e) => { e.preventDefault(); setOver(i) }}
+            onDragLeave={() => setOver((o) => (o === i ? null : o))}
+            onDrop={(e) => { e.preventDefault(); drop(i) }}
+            onDragEnd={() => { setDrag(null); setOver(null) }}>
+            <img src={im.url} alt={im.alt || ''} draggable={false} />
+            {/* hover tools — top-right corner */}
+            <div className="ph-tools" onClick={(e) => e.stopPropagation()}>
+              <button className="ph-tool" title="Edit photo" onClick={() => setMsg('✏️ Photo edit page jald aa raha hai')}>✎</button>
+              <button className="ph-tool" title="Delete" onClick={() => del(im)}>🗑</button>
+              <button className="ph-tool" title="More" onClick={() => setMenu(menu === im.id ? null : im.id)}>⋯</button>
+              {menu === im.id && (
+                <>
+                  <div className="menu-veil" onClick={() => setMenu(null)} />
+                  <div className="ph-menu">
+                    <button onClick={() => { setMenu(null); repIdx.current = i; repRef.current && repRef.current.click() }}>Replace</button>
+                    <button onClick={() => { setMenu(null); window.open(im.full || im.url, '_blank') }}>Download</button>
+                  </div>
+                </>
+              )}
             </div>
+            {/* bottom-left: ⚠ jab alt text nahi */}
+            {!im.alt && <span className="ph-warn" title="Alt text nahi hai — A≡ se dalein">⚠</span>}
+            {/* bottom-right: alt text editor kholo */}
+            <button className="ph-alt" title="Alt text" onClick={(e) => { e.stopPropagation(); setAltFor(im.id); setAltTxt(im.alt || '') }}>A≡</button>
           </div>
         ))}
-      </div>
-      <div style={{ display: 'flex', gap: 8, marginTop: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-        {imgs.length < 10 && (
-          <label className="btn ghost" style={{ cursor: 'pointer' }}>
-            ＋ Upload photos
+        {/* EK hi Upload tile — 20 hone par ghayab */}
+        {imgs.length < MAX_PHOTOS && (
+          <label className="ph-upload">
+            <span style={{ fontSize: 26 }}>🖼</span> Upload
             <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={(e) => { upload(e.target.files); e.target.value = '' }} />
           </label>
         )}
-        {dirty && <button className="btn" disabled={busy} onClick={saveOrder}>💾 Save order</button>}
-        {busy && <span className="muted">⏳…</span>}
       </div>
+      {/* Replace ke liye chhupa input */}
+      <input ref={repRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={(e) => { replace(e.target.files[0]); e.target.value = '' }} />
+
+      {/* alt text editor */}
+      {altFor && (
+        <div style={{ marginTop: 12, border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
+          <label className="muted" style={{ fontSize: 12 }}>Alt text ({altTxt.length}/500) — photo me kya nazar aa raha hai (SEO + accessibility)</label>
+          <textarea value={altTxt} maxLength={500} onChange={(e) => setAltTxt(e.target.value)} rows={3}
+            style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13, margin: '6px 0' }} />
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn sm" disabled={busy} onClick={saveAlt}>💾 Save alt text</button>
+            <button className="btn sm ghost" onClick={() => setAltFor(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
       {msg && <p className="muted" style={{ marginTop: 8 }}>{msg}</p>}
     </div>
   )

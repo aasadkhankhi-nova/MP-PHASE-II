@@ -285,10 +285,10 @@ router.post('/publish', requireUser, async (req, res) => {
       }),
     })
 
-    // 2) upload photos (max 10, order preserved)
+    // 2) upload photos (Etsy: max 20, order preserved)
     let uploaded = 0
     const imgErrors = []
-    for (const dataUrl of images.slice(0, 10)) {
+    for (const dataUrl of images.slice(0, 20)) {
       try {
         const [head, b64] = String(dataUrl).split(',')
         const mime = (head.match(/data:([^;]+)/) || [])[1] || 'image/jpeg'
@@ -405,7 +405,12 @@ router.get('/listing', requireUser, async (req, res) => {
         price: money(l.price),
         currency: l.price?.currency_code || 'USD',
         url: l.url,
-        images: (l.images || []).map((im) => ({ id: im.listing_image_id, url: im.url_570xN || im.url_fullxfull })).filter((x) => x.url),
+        images: (l.images || []).map((im) => ({
+          id: im.listing_image_id,
+          url: im.url_570xN || im.url_fullxfull,
+          full: im.url_fullxfull || im.url_570xN || null,   // download ke liye
+          alt: im.alt_text || '',                            // ⚠ warning jab khali ho
+        })).filter((x) => x.url),
         video: l.videos?.[0] ? { id: l.videos[0].video_id, url: l.videos[0].video_url, thumb: l.videos[0].thumbnail_url } : null,
         personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '', charMax: l.personalization_char_count_max || null },
         hasVariations: !!l.has_variations,
@@ -638,11 +643,11 @@ function fromDataUrl(dataUrl) {
   return { bytes: Buffer.from(b64, 'base64'), mime }
 }
 
-// POST /api/etsy/listing/image { storeId, id, dataUrl, rank }
-// Upload ONE new photo to the listing (max 10 photos per Etsy listing).
+// POST /api/etsy/listing/image { storeId, id, dataUrl, rank, alt }
+// Upload ONE new photo to the listing (Etsy: max 20 photos per listing, Aug 2025 se).
 router.post('/listing/image', requireUser, async (req, res) => {
   try {
-    const { storeId, id, dataUrl, rank } = req.body
+    const { storeId, id, dataUrl, rank, alt } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
@@ -650,8 +655,28 @@ router.post('/listing/image', requireUser, async (req, res) => {
     const fd = new FormData()
     fd.append('image', new Blob([bytes], { type: mime }), `photo.${mime.includes('png') ? 'png' : 'jpg'}`)
     if (rank) fd.append('rank', String(rank))
+    if (alt) fd.append('alt_text', String(alt).slice(0, 500))
     const r = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images`, { method: 'POST', body: fd })
     res.json({ ok: true, imageId: r.listing_image_id })
+  } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
+})
+
+// POST /api/etsy/listing/image/alt { storeId, id, imageId, alt, rank }
+// Alt text set/change karna: Etsy me maujuda image ko usi ke listing_image_id
+// ke saath dobara POST karte hain (file dobara upload NAHI hoti) + alt_text.
+// rank saath bhejna zaruri hai warna Etsy usay rank 1 par le aata hai.
+router.post('/listing/image/alt', requireUser, async (req, res) => {
+  try {
+    const { storeId, id, imageId, alt = '', rank } = req.body
+    if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
+    const conn = await getConn(storeId)
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    const fd = new FormData()
+    fd.append('listing_image_id', String(imageId))
+    if (rank) fd.append('rank', String(rank))
+    fd.append('alt_text', String(alt).slice(0, 500))
+    await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images`, { method: 'POST', body: fd })
+    res.json({ ok: true })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 

@@ -201,6 +201,7 @@ export const etsy = {
   addImage: (storeId, id, dataUrl, rank) => api('/api/etsy/listing/image', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, rank }) }),
   delImage: (storeId, id, imageId) => api('/api/etsy/listing/image/delete', { method: 'POST', body: JSON.stringify({ storeId, id, imageId }) }),
   orderImages: (storeId, id, order) => api('/api/etsy/listing/image/order', { method: 'POST', body: JSON.stringify({ storeId, id, order }) }),
+  setAlt: (storeId, id, imageId, alt, rank) => api('/api/etsy/listing/image/alt', { method: 'POST', body: JSON.stringify({ storeId, id, imageId, alt, rank }) }),
   addVideo: (storeId, id, dataUrl, name) => api('/api/etsy/listing/video', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, name }) }),
   delVideo: (storeId, id, videoId) => api('/api/etsy/listing/video/delete', { method: 'POST', body: JSON.stringify({ storeId, id, videoId }) }),
   setState: (storeId, id, state) => api('/api/etsy/listing/state', { method: 'POST', body: JSON.stringify({ storeId, id, state }) }), // publish / deactivate
