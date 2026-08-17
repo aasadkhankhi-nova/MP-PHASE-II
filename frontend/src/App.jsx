@@ -16,6 +16,7 @@ import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import EtsyStore from './screens/EtsyStore.jsx'
 import { getProfiles, upsertProfile, delProfile, profileSummary } from './store/profiles.js'
+import ProfileEdit from './screens/ProfileEdit.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
 
@@ -145,7 +146,7 @@ function Placeholder({ title }) {
  * neeche ⊞ "Save as Profile" dabayein. Launchpad aur edit page dono
  * isi list se profiles uthate hain.
  */
-function ProfilesPanel() {
+function ProfilesPanel({ onEdit }) {
   const [tick, setTick] = useState(0)
   const list = getProfiles()
   const rename = (p) => {
@@ -169,7 +170,8 @@ function ProfilesPanel() {
       {list.map((p) => (
         <div key={p.id} style={{ padding: '8px 10px', borderBottom: '1px solid var(--line)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <b className="ellip" style={{ flex: 1, fontSize: 13.5 }}>🧩 {p.name}</b>
+            <b className="ellip" style={{ flex: 1, fontSize: 13.5, cursor: 'pointer' }} title="Profile kholein (edit)"
+              onClick={() => onEdit(p.id)}>🧩 {p.name}</b>
             <button className="btn sm ghost" title="Rename" onClick={() => rename(p)}>✏️</button>
             <button className="btn sm danger" title="Delete" onClick={() => del(p)}>🗑</button>
           </div>
@@ -180,8 +182,7 @@ function ProfilesPanel() {
       ))}
       {list.length > 0 && (
         <p className="muted" style={{ padding: '8px 10px', fontSize: 12 }}>
-          Profile update karne ka tariqa: kisi listing par usay laga kar tabdeeli karein,
-          phir dobara Save as Profile (naya naam ya wohi naam).
+          Naam par click karein — profile ka pura edit page khulta hai.
         </p>
       )}
     </div>
@@ -191,6 +192,7 @@ function ProfilesPanel() {
 function Shell() {
   // edit page khula ho to left FILTER SIDEBAR chhup jata hai (Vela jaisa full-width edit)
   const [editFull, setEditFull] = useState(false)
+  const [profEditId, setProfEditId] = useState(null)   // kaunsi profile edit ho rahi hai
   const app = useApp()
   const [screen, setScreen] = useState('etsystore')     // Etsy Store is home now
   const [rail, setRail] = useState('listings')          // icon rail: which PANEL shows (listings | profiles)
@@ -298,6 +300,7 @@ function Shell() {
     eff === 'sets' ? <Sets /> :
     eff === 'listings' ? <Listings /> :
     eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} onEditing={setEditFull} /> :
+    eff === 'profileedit' ? <ProfileEdit key={profEditId} id={profEditId} onBack={() => setScreen('etsystore')} /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />
 
@@ -335,7 +338,7 @@ function Shell() {
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
         {rail === 'profiles' ? (
-          <ProfilesPanel />
+          <ProfilesPanel onEdit={(pid) => { setProfEditId(pid); setScreen('profileedit') }} />
         ) : (
         <div className="side-scroll">
           {/* Status — Etsy listings by state */}
