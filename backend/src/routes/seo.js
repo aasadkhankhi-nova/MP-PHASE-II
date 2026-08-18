@@ -80,23 +80,47 @@ async function gemCall(body, userKey) {
   throw last
 }
 
-// OpenAI-compatible call (Groq / OpenRouter speak the same protocol).
+// OpenAI-compatible call (OpenAI / Groq / OpenRouter — same protocol).
 // Vision: images travel as data-URLs inside the chat message.
+// OpenAI TOKEN-SAVER (Phase I v35 wala system): mini models par image-tokens
+// ~33x gin kar charge hote hain — is liye sirf 1 image + detail:'low' (~2.8k
+// tokens fixed), aur gpt-5 family par hidden reasoning bhi 'low'.
+const OAI_MODELS = {
+  groq: ['qwen/qwen3.6-27b'],
+  openrouter: ['google/gemma-4-31b-it:free'],
+  openai: ['gpt-5-mini', 'gpt-5-nano', 'gpt-4o-mini'],   // ladder: 404/429 par agla
+}
 async function oaiCall(provider, key, sys, userText, images) {
-  const base = provider === 'groq' ? 'https://api.groq.com/openai/v1' : 'https://openrouter.ai/api/v1'
-  const model = provider === 'groq' ? 'qwen/qwen3.6-27b' : 'google/gemma-4-31b-it:free'
+  const base = provider === 'groq' ? 'https://api.groq.com/openai/v1'
+    : provider === 'openrouter' ? 'https://openrouter.ai/api/v1'
+    : 'https://api.openai.com/v1'
+  const imgs = provider === 'openai' ? images.slice(0, 1) : images
   const content = [
-    { type: 'text', text: userText },
-    ...images.map((b) => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b } })),
+    { type: 'text', text: userText + (provider === 'openai' ? '\nNote: only the FIRST artwork image is attached — analyze it fully (read all lettering).' : '') },
+    ...imgs.map((b) => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b, ...(provider === 'openai' ? { detail: 'low' } : {}) } })),
   ]
-  const res = await fetch(base + '/chat/completions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
-    body: JSON.stringify({ model, max_tokens: 2048, messages: [{ role: 'system', content: sys }, { role: 'user', content }] }),
-  })
-  const j = await res.json().catch(() => ({}))
-  if (!res.ok) throw Object.assign(new Error(j.error?.message || `HTTP ${res.status}`), { status: res.status })
-  return j.choices?.[0]?.message?.content || ''
+  let last
+  for (const model of (OAI_MODELS[provider] || OAI_MODELS.openai)) {
+    for (let att = 0; att < 2; att++) {
+      const body = { model, max_tokens: 2048, messages: [{ role: 'system', content: sys }, { role: 'user', content }] }
+      if (/^gpt-5/.test(model)) body.reasoning_effort = 'low'   // SEO ko gehri soch nahi chahiye — chhupe tokens bachao
+      const r2 = await fetch(base + '/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + key },
+        body: JSON.stringify(body),
+      })
+      const j = await r2.json().catch(() => ({}))
+      if (r2.ok) {
+        const tx = j.choices?.[0]?.message?.content || ''
+        if (tx.trim()) return tx
+        last = Object.assign(new Error(`empty response (${model})`), { status: 500 }); break
+      }
+      last = Object.assign(new Error((j.error?.message || `HTTP ${r2.status}`) + ` (${model})`), { status: r2.status })
+      if (r2.status === 429 && att < 1) { await new Promise((r) => setTimeout(r, 15000)); continue }
+      break   // 404 / dead model -> ladder ka agla model
+    }
+  }
+  throw last
 }
 
 // POST /api/seo/generate { images: [base64...], category, keywords, apiKey, provider }
@@ -105,33 +129,51 @@ router.post('/generate', async (req, res) => {
     const { images = [], category = 'Canvas', keywords = '', apiKey = '', provider = 'gemini' } = req.body
 
     // The "system" prompt defines the exact JSON we want back and the
-    // Etsy rules (length limits, no brand names, etc.).
+    // Etsy rules — Phase I v33 wale HARD length rules (chhota SEO qabool nahi).
     const sys =
-      'You are an Etsy SEO copywriting assistant for print-on-demand wall art. ' +
-      'Look at the artwork image(s), read any lettering, and produce strictly valid JSON: ' +
+      'You are an Etsy SEO copywriting assistant for print-on-demand products. ' +
+      'Look at the artwork image(s), READ any lettering word by word, and produce strictly valid JSON: ' +
       '{"title":"...","tags":["..."],"description":"...","alt":"...","vision":{"subject":"...","theme":"...","text":"..."}}. ' +
-      'Rules: title <=140 chars keyword-rich; up to 13 tags each <=20 chars; description <=300 chars about the design; ' +
-      'alt 300-500 chars factual visual description; never use brand names, characters, celebrities or famous slogans.'
+      'Rules: title MUST be 130-140 characters long — a HARD requirement, never short; build it as 4-6 keyword-rich buyer search phrases separated by commas (most searched first), combining artwork subject/theme + product type + audience/occasion/gift angles. ' +
+      'tags: EXACTLY 13 items, each a MULTI-WORD long-tail phrase 12-20 characters (2-3 words) real Etsy buyers search — never single generic words, no duplicates. ' +
+      'description: 270-300 characters — use the FULL 300 budget, never less than 270 — about THE DESIGN itself (what it shows, quoted text, style/colors/mood) on the given product, ending with a soft call to action. ' +
+      'alt: 300-500 chars factual visual description. Never use brand names, characters, celebrities or famous slogans. No text outside the JSON.'
 
+    const userTxt = `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.`
     const parts = [
       ...images.slice(0, 3).map((b) => ({ inline_data: { mime_type: 'image/png', data: b } })),
-      { text: `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.` },
+      { text: userTxt },
     ]
-    // which AI to call? gemini = Google's own API; groq/openrouter = OpenAI-style
-    let txt = ''
-    if (provider === 'groq' || provider === 'openrouter') {
-      txt = await oaiCall(provider, apiKey, sys, `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.`, images.slice(0, 3))
-    } else {
-      const j = await gemCall({
-        system_instruction: { parts: [{ text: sys }] },
-        contents: [{ parts }],
-        generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
-      }, apiKey)
-      txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+    // 2 rounds: agar model chhota SEO de (title/desc/tags adhure) to EK bar dobara
+    let seo = null, lastErr = null
+    for (let round = 0; round < 2 && !seo; round++) {
+      let txt = ''
+      // which AI to call? gemini = Google's own API; openai/groq/openrouter = OpenAI-style
+      if (provider === 'openai' || provider === 'groq' || provider === 'openrouter') {
+        txt = await oaiCall(provider, apiKey, sys, userTxt, images.slice(0, 3))
+      } else {
+        const j = await gemCall({
+          system_instruction: { parts: [{ text: sys }] },
+          contents: [{ parts }],
+          generationConfig: { maxOutputTokens: 2048, responseMimeType: 'application/json' },
+        }, apiKey)
+        txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+      }
+      const m = txt.match(/\{[\s\S]*\}/)
+      if (!m) { lastErr = 'no JSON in AI response'; continue }
+      const o = JSON.parse(m[0])
+      // lambe tags DROP nahi hote — word-boundary par 20 tak tarashe jate hain
+      o.tags = [...new Set((o.tags || []).map((x) => {
+        let t = String(x).trim().toLowerCase()
+        if (t.length > 20) { t = t.slice(0, 20); const c = t.lastIndexOf(' '); if (c > 9) t = t.slice(0, c); t = t.trim() }
+        return t
+      }).filter(Boolean))].slice(0, 13)
+      const tl = String(o.title || '').length, dl = String(o.description || '').length
+      if (round === 0 && (tl < 110 || dl < 220 || o.tags.length < 13)) { lastErr = `SEO adhura (title ${tl}, desc ${dl}, ${o.tags.length}/13 tags)`; continue }
+      seo = o
     }
-    const m = txt.match(/\{[\s\S]*\}/)
-    if (!m) throw new Error('no JSON in AI response')
-    res.json({ ok: true, seo: JSON.parse(m[0]) })
+    if (!seo) throw new Error(lastErr || 'AI se poora SEO nahi mila')
+    res.json({ ok: true, seo })
   } catch (e) {
     res.status(e.status || 500).json({ ok: false, error: e.message })
   }

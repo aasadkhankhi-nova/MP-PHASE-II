@@ -54,6 +54,7 @@ export async function api(path, options = {}) {
 // Saved ONLY in this browser (localStorage) — never on our server.
 // Shape: { prov: 'gemini', keys: { gemini:'', groq:'', openrouter:'' } }
 export const AI_PROVIDERS = [
+  { id: 'openai', label: 'OpenAI (ChatGPT — gpt-5-mini)', help: 'platform.openai.com/api-keys' },
   { id: 'gemini', label: 'Google Gemini', help: 'aistudio.google.com/apikey' },
   { id: 'groq', label: 'Groq (free — vision)', help: 'console.groq.com' },
   { id: 'openrouter', label: 'OpenRouter (free models)', help: 'openrouter.ai' },
