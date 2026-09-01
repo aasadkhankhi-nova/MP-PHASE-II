@@ -12,7 +12,7 @@
 import React, { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
-import { getProfiles, upsertProfile } from '../store/profiles.js'
+import { getProfiles, upsertProfile, delProfile } from '../store/profiles.js'
 
 function findTaxoPath(tree, taxonomyId) {
   const path = []
@@ -455,6 +455,7 @@ export default function ProfileEdit({ id, onBack }) {
       {/* ---- bottom bar ---- */}
       <div className="ebar">
         <button className="btn ghost" onClick={onBack}>Cancel</button>
+        <button className="btn danger" onClick={() => { if (confirm(`Profile "${p.name}" DELETE karni hai?`)) { delProfile(p.id); onBack() } }}>🗑 Delete</button>
         <span style={{ flex: 1, fontSize: 13 }}>
           {msg ? <span className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'}>{msg}</span>
             : <span className="muted">Save = sirf profile update — Etsy par kuch nahi jata.</span>}

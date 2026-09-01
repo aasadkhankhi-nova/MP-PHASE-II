@@ -15,7 +15,7 @@ import Designs from './screens/Designs.jsx'
 import Sets from './screens/Sets.jsx'
 import Listings from './screens/Listings.jsx'
 import EtsyStore from './screens/EtsyStore.jsx'
-import { getProfiles, upsertProfile, delProfile, profileSummary } from './store/profiles.js'
+import { getProfiles } from './store/profiles.js'
 import ProfileEdit from './screens/ProfileEdit.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
@@ -147,15 +147,7 @@ function Placeholder({ title }) {
  * isi list se profiles uthate hain.
  */
 function ProfilesPanel({ onEdit }) {
-  const [tick, setTick] = useState(0)
   const list = getProfiles()
-  const rename = (p) => {
-    const n = prompt('Naya naam:', p.name)
-    if (n && n.trim()) { upsertProfile({ ...p, name: n.trim() }); setTick(tick + 1) }
-  }
-  const del = (p) => {
-    if (confirm(`Profile "${p.name}" delete karni hai?`)) { delProfile(p.id); setTick(tick + 1) }
-  }
   return (
     <div className="side-scroll">
       <div className="nav-sec">Profiles ({list.length})</div>
@@ -168,17 +160,9 @@ function ProfilesPanel({ onEdit }) {
         </p>
       )}
       {list.map((p) => (
-        <div key={p.id} style={{ padding: '8px 10px', borderBottom: '1px solid var(--line)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <b className="ellip" style={{ flex: 1, fontSize: 13.5, cursor: 'pointer' }} title="Profile kholein (edit)"
-              onClick={() => onEdit(p.id)}>🧩 {p.name}</b>
-            <button className="btn sm ghost" title="Rename" onClick={() => rename(p)}>✏️</button>
-            <button className="btn sm danger" title="Delete" onClick={() => del(p)}>🗑</button>
-          </div>
-          <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 5 }}>
-            {profileSummary(p).map((c) => <span key={c} className="chip" style={{ fontSize: 10.5, padding: '2px 8px' }}>{c}</span>)}
-          </div>
-        </div>
+        <button key={p.id} className="nav-item" title="Profile kholein (edit)" onClick={() => onEdit(p.id)}>
+          🧩 <span className="ellip">{p.name}</span>
+        </button>
       ))}
       {list.length > 0 && (
         <p className="muted" style={{ padding: '8px 10px', fontSize: 12 }}>
