@@ -48,7 +48,7 @@ export default function ProfileEdit({ id, onBack }) {
   const app = useApp()
   const storeId = app.curStoreId
   const [p, setP] = useState(() => {
-    const x = getProfiles().find((y) => y.id === id)
+    const x = getProfiles(storeId).find((y) => y.id === id)
     return x ? JSON.parse(JSON.stringify(x)) : null   // editable copy
   })
   const [msg, setMsg] = useState(null)
@@ -151,7 +151,7 @@ export default function ProfileEdit({ id, onBack }) {
   const comboLabel = (r) => (r.propertyValues || []).map((pv) => (pv.values || []).join(', ')).join(' / ') || '—'
 
   const save = () => {
-    upsertProfile(p)
+    upsertProfile(storeId, p)
     setMsg(`✅ Profile "${p.name}" save ho gayi`)
   }
 
@@ -531,7 +531,7 @@ export default function ProfileEdit({ id, onBack }) {
       {/* ---- bottom bar ---- */}
       <div className="ebar">
         <button className="btn ghost" onClick={onBack}>Cancel</button>
-        <button className="btn danger" onClick={() => { if (confirm(`Profile "${p.name}" DELETE karni hai?`)) { delProfile(p.id); onBack() } }}>🗑 Delete</button>
+        <button className="btn danger" onClick={() => { if (confirm(`Profile "${p.name}" DELETE karni hai?`)) { delProfile(storeId, p.id); onBack() } }}>🗑 Delete</button>
         <span style={{ flex: 1, fontSize: 13 }}>
           {msg ? <span className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'}>{msg}</span>
             : <span className="muted">Save = sirf profile update — Etsy par kuch nahi jata.</span>}

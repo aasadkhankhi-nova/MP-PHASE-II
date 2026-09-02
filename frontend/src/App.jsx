@@ -155,8 +155,8 @@ function Placeholder({ title }) {
  * neeche ⊞ "Save as Profile" dabayein. Launchpad aur edit page dono
  * isi list se profiles uthate hain.
  */
-function ProfilesPanel({ onEdit }) {
-  const list = getProfiles()
+function ProfilesPanel({ onEdit, storeId }) {
+  const list = getProfiles(storeId)
   return (
     <div className="side-scroll">
       <div className="nav-sec">Profiles ({list.length})</div>
@@ -333,7 +333,7 @@ function Shell() {
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
         {rail === 'profiles' ? (
-          <ProfilesPanel onEdit={(pid) => { setProfEditId(pid); setScreen('profileedit') }} />
+          <ProfilesPanel storeId={app.curStoreId} onEdit={(pid) => { setProfEditId(pid); setScreen('profileedit') }} />
         ) : (
         <div className="side-scroll">
           {/* Status — Etsy listings by state */}

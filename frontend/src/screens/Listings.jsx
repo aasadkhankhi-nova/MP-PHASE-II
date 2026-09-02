@@ -92,7 +92,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const [secIn, setSecIn] = useState('')              // ＋New section ka naam
   const [secBusy, setSecBusy] = useState(false)
   const [regenBusy, setRegenBusy] = useState(null)    // 'title'|'tags'|'description' regen chal raha
-  const profiles = getProfiles()
+  const profiles = getProfiles(app.curStoreId)
   const set = (patch) => app.updListing(L.id, patch)
   const SEC_MAX = 20   // Etsy rule: har shop me zyada se zyada 20 sections
 

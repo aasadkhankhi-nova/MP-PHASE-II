@@ -594,7 +594,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
         const P = (props || []).find((x) => String(x.propertyId) === String(pid))
         attrs[pid] = { ids, names: ids.map((id) => P?.options.find((o) => String(o.id) === String(id))?.name).filter(Boolean) }
       }
-      upsertProfile({
+      upsertProfile(storeId, {
         id: newProfileId(), name, at: Date.now(),
         desc2: '',                                    // description user khud likhega (Profile edit page)
         photos,                                       // size charts — nayi listing me mockups ke baad
@@ -621,7 +621,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   // (sirf screen par; Etsy par Publish se jayengi). SKU ko haath nahi lagta.
   const applyProfile = (pid) => {
     setProfSel(pid)
-    const p = getProfiles().find((x) => x.id === pid)
+    const p = getProfiles(storeId).find((x) => x.id === pid)
     if (!p) return
     if (p.materials?.length) setMats(p.materials)
     const dd = p.details || {}
@@ -656,7 +656,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   }
   // profiles: ⊞ Save as Profile se banti hain; yahan list + apply hota hai
   const [profTick, setProfTick] = useState(0)
-  const profiles = useMemo(() => getProfiles(), [profTick])
+  const profiles = useMemo(() => getProfiles(storeId), [profTick, storeId])
   const [profSel, setProfSel] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
