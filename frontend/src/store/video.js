@@ -41,6 +41,10 @@ export async function makeSlideshowVideo(dataUrls, { per = 1.1, size = 1080, max
       await new Promise((r) => setTimeout(r, 33))
     }
   }
+  // aakhri frame thora sa hold + bacha hua data nikalo (kuch browsers me
+  // warna video ka end katta hai ya file adhoori rehti hai)
+  await new Promise((r) => setTimeout(r, 250))
+  try { rec.requestData() } catch {}
   rec.stop()
   await stopped
   const blob = new Blob(chunks, { type: mime })

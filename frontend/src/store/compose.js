@@ -43,8 +43,11 @@ export const pick = (cand, tag) => {
  * 1. If the box targets a design number ('single' or '1'..'8'):
  *    only designs with that same number qualify; prefer matching placement,
  *    then pick the right color variant.
- * 2. If the box is 'any': match by placement first, then color variant.
- * Returns null when nothing fits (reported as "missed" to the user).
+ * 2. If the box is 'any': match by placement first; agar us placement ka
+ *    KOI design nahi hai to baqi designs me se sahi color-variant utha lo
+ *    (box banaya hai to usme print aani chahiye — pehle wala code aise box
+ *    ko khali chor deta tha, is liye "pocket" box me kuch nahi aata tha).
+ * Returns null only when there is truly nothing usable.
  */
 export function matchDesign(designs, box) {
   const target = boxDnum(box)
@@ -54,9 +57,10 @@ export function matchDesign(designs, box) {
     if (!cand.length) cand = inNum   // number chosen but placement differs -> still use that artwork
     return cand.length ? pick(cand, box.tag) || cand[0] : null
   }
-  const cand = designs.filter((d) => d.placement === box.name)
+  let cand = designs.filter((d) => d.placement === box.name)
+  if (!cand.length) cand = designs   // placement ka design nahi -> koi bhi (variant se chunega)
   if (!cand.length) return null
-  return pick(cand, box.tag)
+  return pick(cand, box.tag) || cand[0]
 }
 
 /**

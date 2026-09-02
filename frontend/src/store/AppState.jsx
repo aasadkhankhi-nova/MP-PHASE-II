@@ -115,9 +115,12 @@ export function AppStateProvider({ children }) {
       setSync((s) => ({ ...s, state: 'pulling' }))
       const r = await cloudWs.pull(id)
       const cloud = fromCloud(r.ws)
-      const outByListing = {}
-      for (const L of cached.listings || []) outByListing[L.id] = L.outputs || []
-      cloud.listings = cloud.listings.map((L) => ({ ...L, outputs: outByListing[L.id] || [] }))
+      // Listings ke LOCAL-only hisse wapas jorho (cloud me nahi jate):
+      // outputs (photos), video, sku, profileId, etsy link.
+      cloud.listings = cloud.listings.map((L) => {
+        const loc = (cached.listings || []).find((c) => c.id === L.id) || {}
+        return { ...L, outputs: loc.outputs || [], video: loc.video || null, sku: loc.sku || '', profileId: loc.profileId || null, etsy: loc.etsy || null }
+      })
       // SELF-HEAL merge: agar cloud me image_url NAHI hai (upload us waqt fail
       // hua tha) lekin local cache me asli photo (data:) mojud hai to use
       // wapas laga do — warna refresh ke baad photo "tooti" dikhti hai.
