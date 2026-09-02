@@ -537,40 +537,71 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
 
-  // ⊞ Save as Profile — is listing ka template ban jata hai:
-  // materials + Details sab + price/qty + variations (SKU ke BAGHAIR) +
-  // shipping sab + description ka profile-hissa (pehli khali line ke baad wala)
-  const saveAsProfile = () => {
-    const name = prompt('Profile ka naam:', '')
-    if (!name || !name.trim()) return
-    const inv = reg.current.getInventory ? reg.current.getInventory() : null
-    const hasVars = inv && inv.rows.length && (inv.rows.length > 1 || (inv.rows[0].propertyValues || []).length)
-    // attributes ids + names (names Etsy ko wapas bhejne ke liye chahiye hote hain)
-    const attrs = {}
-    for (const [pid, ids] of Object.entries(propSel)) {
-      if (!ids?.length) continue
-      const P = (props || []).find((x) => String(x.propertyId) === String(pid))
-      attrs[pid] = { ids, names: ids.map((id) => P?.options.find((o) => String(o.id) === String(id))?.name).filter(Boolean) }
+  // ⊞ Save as Profile — pehle photo-picker modal khulta hai (size charts chunein),
+  // phir save hota hai: photos + materials + Details (SECTION ke baghair) +
+  // price/qty + variations (SKU ke baghair) + shipping sab.
+  // Description ka profile-hissa user KHUD Profile edit page par likhta hai.
+  const [profPick, setProfPick] = useState(null)   // {name, sel:Set(imageIds)}
+  const saveAsProfile = () => setProfPick({ name: '', sel: new Set() })
+
+  // photo ko chhota (max 800px JPEG) kar ke profile me rakhte hain — storage bachta hai
+  const shrinkImg = (src) => new Promise((resolve, reject) => {
+    const im = new Image()
+    im.onload = () => {
+      const k = Math.min(1, 800 / Math.max(im.width, im.height))
+      const c = document.createElement('canvas')
+      c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k))
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height)
+      resolve(c.toDataURL('image/jpeg', 0.85))
     }
-    const nl = desc.indexOf('\n\n')
-    upsertProfile({
-      id: newProfileId(), name: name.trim(), at: Date.now(),
-      desc2: nl >= 0 ? desc.slice(nl + 2).trim() : '',
-      materials: mats,
-      details: {
-        ltype, isSupply, whoMade, whenMade,
-        partnerIds, taxonomyId: effTaxo || detail.taxonomyId || null,
-        attrs, autoRenew, sectionId: sectionId || '',
-      },
-      priceQty: inv && inv.rows[0] ? { price: inv.rows[0].price, quantity: inv.rows[0].quantity } : null,
-      variations: hasVars ? {
-        pOn: inv.pOn, qOn: inv.qOn, sOn: [],
-        products: inv.rows.map((r) => ({ propertyValues: r.propertyValues, price: r.price, quantity: r.quantity, enabled: r.enabled })),
-      } : null,
-      shipping: { readinessStateId: readyId || '', shippingProfileId: shipId || '', returnPolicyId: retId || '', wt, wtU, dimL, dimW, dimH, dimU },
-    })
-    setProfTick((t) => t + 1)
-    setMsg(`⊞ Profile "${name.trim()}" save ho gaya — Profiles panel (🧩) aur Choose Profile me maujud hai`)
+    im.onerror = () => reject(new Error('photo load nahi hui'))
+    im.src = src
+  })
+
+  const confirmSaveProfile = async () => {
+    const name = (profPick.name || '').trim()
+    if (!name) { setMsg('⚠ Profile ka naam likhein'); return }
+    setBusy(true)
+    try {
+      // chuni hui size-chart photos — CDN se utha kar chhota JPEG bana kar profile me
+      const photos = []
+      for (const imId of profPick.sel) {
+        const im = (detail.images || []).find((x) => String(x.id) === String(imId))
+        if (!im) continue
+        try {
+          const src = im.url.startsWith('data:') ? im.url : await etsy.imageData(im.full || im.url)
+          photos.push({ dataUrl: await shrinkImg(src), name: 'size-chart' })
+        } catch {}
+      }
+      const inv = reg.current.getInventory ? reg.current.getInventory() : null
+      const hasVars = inv && inv.rows.length && (inv.rows.length > 1 || (inv.rows[0].propertyValues || []).length)
+      const attrs = {}
+      for (const [pid, ids] of Object.entries(propSel)) {
+        if (!ids?.length) continue
+        const P = (props || []).find((x) => String(x.propertyId) === String(pid))
+        attrs[pid] = { ids, names: ids.map((id) => P?.options.find((o) => String(o.id) === String(id))?.name).filter(Boolean) }
+      }
+      upsertProfile({
+        id: newProfileId(), name, at: Date.now(),
+        desc2: '',                                    // description user khud likhega (Profile edit page)
+        photos,                                       // size charts — nayi listing me mockups ke baad
+        materials: mats,
+        details: {
+          ltype, isSupply, whoMade, whenMade,
+          partnerIds, taxonomyId: effTaxo || detail.taxonomyId || null,
+          attrs, autoRenew,                           // SECTION profile ka hissa NAHI
+        },
+        priceQty: inv && inv.rows[0] ? { price: inv.rows[0].price, quantity: inv.rows[0].quantity } : null,
+        variations: hasVars ? {
+          pOn: inv.pOn, qOn: inv.qOn, sOn: [],
+          products: inv.rows.map((r) => ({ propertyValues: r.propertyValues, price: r.price, quantity: r.quantity, enabled: r.enabled })),
+        } : null,
+        shipping: { readinessStateId: readyId || '', shippingProfileId: shipId || '', returnPolicyId: retId || '', wt, wtU, dimL, dimW, dimH, dimU },
+      })
+      setProfPick(null)
+      setProfTick((t) => t + 1)
+      setMsg(`⊞ Profile "${name}" save ho gaya${photos.length ? ` (${photos.length} size-chart photos ke saath)` : ''} — 🧩 panel me description likhna na bhulein`)
+    } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
 
   // Choose Profile — profile ki sari cheezen is listing par LAG jati hain
@@ -586,7 +617,6 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     if (dd.whoMade) setWhoMade(dd.whoMade)
     if (dd.whenMade) setWhenMade(dd.whenMade)
     if (dd.partnerIds) setPartnerIds(dd.partnerIds.map(String))
-    if (dd.sectionId !== undefined) setSectionId(dd.sectionId || '')
     setAutoRenew(!!dd.autoRenew)
     if (dd.attrs) setPropSel(Object.fromEntries(Object.entries(dd.attrs).map(([k, v]) => [k, v.ids || []])))
     if (dd.taxonomyId && taxoTree) { const path = findTaxoPath(taxoTree, dd.taxonomyId); if (path.length) setTaxoPath(path) }
@@ -1052,6 +1082,35 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
 
         </div>
       </div>
+
+      {/* ---- ⊞ Save as Profile — photo picker (size charts) ---- */}
+      {profPick && (
+        <div className="modal-overlay" onClick={() => setProfPick(null)}>
+          <div className="modal-card" style={{ maxWidth: 660 }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ marginTop: 0 }}>⊞ Save as Profile</h3>
+            <label className="muted" style={{ fontSize: 12 }}>Profile ka naam</label>
+            <input autoFocus value={profPick.name} onChange={(e) => setProfPick({ ...profPick, name: e.target.value })} style={{ width: '100%', marginBottom: 12 }} />
+            <label className="muted" style={{ fontSize: 12 }}>SIZE-CHART photos chunein (optional) — ye har nayi listing me mockups ke BAAD khud lagengi</label>
+            <div className="vphotos" style={{ marginTop: 6, maxHeight: 280, overflow: 'auto' }}>
+              {(detail.images || []).map((im) => {
+                const on = profPick.sel.has(String(im.id))
+                return (
+                  <img key={im.id} src={im.url} alt="" className={'vphoto' + (on ? ' sel' : '')} style={{ width: 88, height: 88 }}
+                    onClick={() => { const s2 = new Set(profPick.sel); if (on) s2.delete(String(im.id)); else s2.add(String(im.id)); setProfPick({ ...profPick, sel: s2 }) }} />
+                )
+              })}
+            </div>
+            <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+              Saath save hoga: materials, Details (section ke <b>baghair</b>), price/quantity, variations (SKU nahi), shipping sab.
+              Description ka profile-hissa aap 🧩 Profile edit page par khud likhenge.
+            </p>
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <button className="btn" disabled={busy} onClick={confirmSaveProfile}>{busy ? '⏳…' : `💾 Save profile${profPick.sel.size ? ` (${profPick.sel.size} photos)` : ''}`}</button>
+              <button className="btn ghost" onClick={() => setProfPick(null)}>Cancel</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ---- Vela-style STICKY bottom bar: Cancel · View on Etsy ·
            Save as Profile · Copy · Save · Publish ▾ (Active / Draft) ---- */}

@@ -24,7 +24,11 @@ export default function NewListing({ L, onBack, onSaved }) {
   const [tags, setTags] = useState(L.seo?.tags || [])
   const [tagIn, setTagIn] = useState('')
   const [alt, setAlt] = useState(L.seo?.alt || '')
-  const [photos, setPhotos] = useState((L.outputs || []).map((o) => ({ id: o.id, dataUrl: o.dataUrl, name: o.name })))
+  const [photos, setPhotos] = useState(() => [
+    ...(L.outputs || []).map((o) => ({ id: o.id, dataUrl: o.dataUrl, name: o.name })),
+    // profile ki size-chart photos — mockups ke BAAD khud lag jati hain
+    ...((getProfiles().find((pp) => pp.id === L.profileId)?.photos) || []).map((x, i) => ({ id: 'prof' + i, dataUrl: x.dataUrl, name: x.name || 'size-chart' })),
+  ])
   const [video, setVideo] = useState(L.video || null)
   // user ka apna hissa — SKU sirf YAHAN manually
   const [sku, setSku] = useState(L.sku || '')
@@ -168,8 +172,8 @@ export default function NewListing({ L, onBack, onSaved }) {
         {errs.profile && <p className="err-msg">{errs.profile}</p>}
         {profile && (
           <p className="muted" style={{ fontSize: 13 }}>
-            Ye sab profile se lagega: {profile.materials?.length ? `${profile.materials.length} materials · ` : ''}
-            Details (category, attributes, who/when made{profile.details?.sectionId ? ', section' : ''})
+            Ye sab profile se lagega: {profile.photos?.length ? `${profile.photos.length} size-chart photos · ` : ''}{profile.materials?.length ? `${profile.materials.length} materials · ` : ''}
+            Details (category, attributes, who/when made)
             {hasVars ? ` · ${profile.variations.products.length} variations (prices/qty profile ke)` : ''}
             {' '}· Shipping (profile, return policy{profile.shipping?.readinessStateId ? ', processing' : ''}).
           </p>

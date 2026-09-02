@@ -14,6 +14,22 @@ import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
 import { getProfiles, upsertProfile, delProfile } from '../store/profiles.js'
 
+// photo ko chhota (max 800px JPEG) kar ke profile me rakhte hain
+function shrinkImg(src) {
+  return new Promise((resolve, reject) => {
+    const im = new Image()
+    im.onload = () => {
+      const k = Math.min(1, 800 / Math.max(im.width, im.height))
+      const c = document.createElement('canvas')
+      c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k))
+      c.getContext('2d').drawImage(im, 0, 0, c.width, c.height)
+      resolve(c.toDataURL('image/jpeg', 0.85))
+    }
+    im.onerror = () => reject(new Error('photo load nahi hui'))
+    im.src = src
+  })
+}
+
 function findTaxoPath(tree, taxonomyId) {
   const path = []
   const find = (nodes, trail) => {
@@ -296,11 +312,36 @@ export default function ProfileEdit({ id, onBack }) {
           </button>
         </div>
 
-        <label className="muted" style={{ fontSize: 12, display: 'block' }}>Section <span className="opt">Optional</span></label>
-        <select value={det.sectionId || ''} onChange={(e) => uD({ sectionId: e.target.value })} style={{ minWidth: 200 }}>
-          <option value="">— koi section nahi —</option>
-          {(sections || []).map((sx) => <option key={sx.id} value={sx.id}>{sx.title}</option>)}
-        </select>
+        <p className="muted" style={{ fontSize: 12 }}>Note: shop-SECTION profile ka hissa nahi hota — wo har listing par alag chuna jata hai.</p>
+      </div>
+
+      {/* ---- Size-chart photos — Launchpad ki har nayi listing me mockups ke BAAD lagti hain ---- */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>📐 Size charts / photos <span className="chip">{(p.photos || []).length}</span></h3>
+        <div className="vphotos">
+          {(p.photos || []).map((ph, i) => (
+            <span key={i} style={{ position: 'relative', display: 'inline-block' }}>
+              <img src={ph.dataUrl} alt="" className="vphoto" style={{ width: 92, height: 92, cursor: 'default' }} />
+              <button className="ph-tool" title="Remove" style={{ position: 'absolute', top: 2, right: 2, background: '#fff', borderRadius: 6 }}
+                onClick={() => u({ photos: p.photos.filter((_, x) => x !== i) })}>🗑</button>
+            </span>
+          ))}
+          {!(p.photos || []).length && <span className="muted" style={{ fontSize: 12 }}>Abhi koi photo nahi — listing se Save as Profile karte waqt chunein, ya yahan upload karein.</span>}
+        </div>
+        <label className="btn sm ghost" style={{ cursor: 'pointer', marginTop: 10, display: 'inline-block' }}>
+          ＋ Photo add karein
+          <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={async (e) => {
+            const list = [...(p.photos || [])]
+            for (const f of Array.from(e.target.files)) {
+              try {
+                const src = await new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f) })
+                list.push({ dataUrl: await shrinkImg(src), name: f.name })
+              } catch {}
+            }
+            u({ photos: list }); e.target.value = ''
+          }} />
+        </label>
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Ye photos har nayi listing me generated mockups ke BAAD khud lag jayengi.</p>
       </div>
 
       {/* ---- Price & Quantity (jab variations na hon) ---- */}
