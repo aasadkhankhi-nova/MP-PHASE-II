@@ -542,7 +542,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   // price/qty + variations (SKU ke baghair) + shipping sab.
   // Description ka profile-hissa user KHUD Profile edit page par likhta hai.
   const [profPick, setProfPick] = useState(null)   // {name, sel:Set(imageIds)}
-  const saveAsProfile = () => setProfPick({ name: '', sel: new Set() })
+  const saveAsProfile = () => { setMsg(null); setProfPick({ name: '', sel: new Set(), err: null }) }
 
   // photo ko chhota (max 800px JPEG) kar ke profile me rakhte hain — storage bachta hai
   const shrinkImg = (src) => new Promise((resolve, reject) => {
@@ -560,7 +560,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
 
   const confirmSaveProfile = async () => {
     const name = (profPick.name || '').trim()
-    if (!name) { setMsg('⚠ Profile ka naam likhein'); return }
+    if (!name) { setProfPick({ ...profPick, err: 'Profile ka naam likhein' }); return }
     setBusy(true)
     try {
       // chuni hui size-chart photos — CDN se utha kar chhota JPEG bana kar profile me
@@ -1104,6 +1104,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
               Saath save hoga: materials, Details (section ke <b>baghair</b>), price/quantity, variations (SKU nahi), shipping sab.
               Description ka profile-hissa aap 🧩 Profile edit page par khud likhenge.
             </p>
+            {profPick.err && <p className="err-msg" style={{ marginTop: 8 }}>⚠ {profPick.err}</p>}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
               <button className="btn" disabled={busy} onClick={confirmSaveProfile}>{busy ? '⏳…' : `💾 Save profile${profPick.sel.size ? ` (${profPick.sel.size} photos)` : ''}`}</button>
               <button className="btn ghost" onClick={() => setProfPick(null)}>Cancel</button>
