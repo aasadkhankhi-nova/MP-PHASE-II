@@ -118,9 +118,20 @@ export function AppStateProvider({ children }) {
       const outByListing = {}
       for (const L of cached.listings || []) outByListing[L.id] = L.outputs || []
       cloud.listings = cloud.listings.map((L) => ({ ...L, outputs: outByListing[L.id] || [] }))
+      // SELF-HEAL merge: agar cloud me image_url NAHI hai (upload us waqt fail
+      // hua tha) lekin local cache me asli photo (data:) mojud hai to use
+      // wapas laga do — warna refresh ke baad photo "tooti" dikhti hai.
+      const mergeKeep = (cloudArr, cacheArr) => cloudArr.map((it) => {
+        if (it.dataUrl) return it
+        const loc = (cacheArr || []).find((c) => c.id === it.id)
+        return loc && String(loc.dataUrl || '').startsWith('data:') ? { ...it, dataUrl: loc.dataUrl } : it
+      })
+      cloud.mockups = mergeKeep(cloud.mockups, cached.mockups)
+      cloud.designs = mergeKeep(cloud.designs, cached.designs)
       setWs(cloud)
       await kvSet('ws:' + id, cloud)
       setSync({ state: 'ok', at: Date.now() })
+      healUploads(id)   // background: jo photos cloud par nahi pahunchi unhe ab upload karo
     } catch (e) {
       if (!silent) console.warn('pull failed', e)
       setWs(cached)   // offline: keep working with the local copy
@@ -154,6 +165,27 @@ export function AppStateProvider({ children }) {
     await kvSet('ws:' + storeId, next)
     schedulePush()
   }, [schedulePush])
+
+  // healUploads — background repair: jis mockup/design ki photo LOCAL me hai
+  // (data:...) lekin cloud imageUrl nahi bana (upload fail hua tha), use ab
+  // dubara upload kar ke workspace update kar do. Ek waqt me ek hi run.
+  const healing = useRef(false)
+  async function healUploads(storeId) {
+    if (healing.current || !getSession()) return
+    healing.current = true
+    try {
+      for (const kind of ['mockups', 'designs']) {
+        for (const it of wsRef.current[kind] || []) {
+          if (storeRef.current !== storeId) return
+          if (it.imageUrl || !String(it.dataUrl || '').startsWith('data:')) continue
+          try {
+            const url = await uploadImage(it.dataUrl, it.name || 'img')
+            await saveWs(storeId, { ...wsRef.current, [kind]: wsRef.current[kind].map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
+          } catch { /* agli bar (boot/sync) par phir try hoga */ }
+        }
+      }
+    } finally { healing.current = false }
+  }
 
   // The public API object that all screens use via useApp().
   const api = {
@@ -232,18 +264,22 @@ export function AppStateProvider({ children }) {
     // On upload: read file -> auto light/dark tag -> (if logged in) upload
     // the image to cloud Storage so other devices can see it too.
     async addMockupFiles(files) {
-      let n = 0
+      let n = 0, failed = 0
       const items = []
       for (const f of files) {
         if (!/^image\/(jpeg|png|webp)/.test(f.type)) continue
         const dataUrl = await readFileAsDataURL(f)
         const tag = await detectTag(dataUrl)
         let imageUrl = null
-        if (authed) { try { imageUrl = await uploadImage(dataUrl, f.name) } catch {} }
+        if (authed) {
+          try { imageUrl = await uploadImage(dataUrl, f.name) }
+          catch { try { imageUrl = await uploadImage(dataUrl, f.name) } catch { failed++ } }  // ek retry, phir warn
+        }
         items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, colorTag: tag, boxes: [], setIds: [] })
         n++
       }
       if (n) await saveWs(curStoreId, { ...wsRef.current, mockups: [...wsRef.current.mockups, ...items] })
+      if (failed) alert(`⚠ ${failed} photo(s) cloud par upload NahI ho saki(n) (backend/internet issue).\nWo abhi sirf is browser me hain — app agli sync par khud dubara upload karega.\nBackend theek hone tak page refresh karne se pehle ☁ chip green hone ka intezar karein.`)
       return n
     },
     async updMockup(id, patch) {
@@ -255,18 +291,22 @@ export function AppStateProvider({ children }) {
 
     // ---- designs (same upload pattern as mockups) ----
     async addDesignFiles(files) {
-      let n = 0
+      let n = 0, failed = 0
       const items = []
       for (const f of files) {
         if (!/^image\/(png|svg\+xml)/.test(f.type)) continue
         const dataUrl = await readFileAsDataURL(f)
         const g = guessFromName(f.name)
         let imageUrl = null
-        if (authed) { try { imageUrl = await uploadImage(dataUrl, f.name) } catch {} }
+        if (authed) {
+          try { imageUrl = await uploadImage(dataUrl, f.name) }
+          catch { try { imageUrl = await uploadImage(dataUrl, f.name) } catch { failed++ } }
+        }
         items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, placement: g.placement, variant: g.variant, dnum: 'single' })
         n++
       }
       if (n) await saveWs(curStoreId, { ...wsRef.current, designs: [...wsRef.current.designs, ...items] })
+      if (failed) alert(`⚠ ${failed} design(s) cloud par upload nahi ho sake — abhi sirf is browser me hain, app agli sync par khud dubara try karega.`)
       return n
     },
     async updDesign(id, patch) {
