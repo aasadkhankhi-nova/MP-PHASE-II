@@ -32,6 +32,9 @@ const TITLES = {
   help: { icon: 'ℹ️', label: 'Help center' },
   support: { icon: '💬', label: 'Support' },
 }
+// "＋ Add shop" ke doran naye placeholder store ki id — cleanup isay skip karti hai
+let CONNECTING_ID = null
+
 const ES_STATES = [
   { id: 'active', label: 'Active' },
   { id: 'draft', label: 'Draft' },
@@ -62,7 +65,10 @@ function ShopSwitcher({ app, screen, go }) {
         // CLEANUP: "Add shop" makes a placeholder workspace before sending
         // the user to Etsy. If they backed out without granting access,
         // that empty "New shop" would linger — remove it automatically.
-        const orphans = app.stores.filter((s) => s.name === 'New shop' && !m[s.id])
+        // SIRF app-boot par chalta hai, aur ABHI-connect-hone-wala store
+        // (CONNECTING_ID) kabhi delete nahi hota — warna Add shop ke doran
+        // naya placeholder delete ho kar "store not found" aata tha.
+        const orphans = app.stores.filter((s) => s.name === 'New shop' && !m[s.id] && s.id !== CONNECTING_ID)
         if (orphans.length) {
           const wasCurrent = orphans.some((o) => o.id === app.curStoreId)
           for (const o of orphans) { try { await app.deleteStore(o.id) } catch {} }
@@ -73,7 +79,8 @@ function ShopSwitcher({ app, screen, go }) {
         }
       })
       .catch(() => {})
-  }, [app.authed, app.stores.length, app.curStoreId])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app.authed])
 
   if (!app.stores.length) return null
   const cur = app.curStore
@@ -92,6 +99,7 @@ function ShopSwitcher({ app, screen, go }) {
     setOpen(false)
     try {
       const st = await app.addStore('New shop')
+      CONNECTING_ID = st.id                 // cleanup isay haath na lagaye
       await app.selectStore(st.id)
       const r = await etsy.connectUrl(st.id)
       window.location.href = r.url          // -> Etsy permission page
@@ -263,6 +271,7 @@ function Shell() {
   const addShopBottom = async () => {
     try {
       const st = await app.addStore('New shop')
+      CONNECTING_ID = st.id                 // cleanup isay haath na lagaye
       await app.selectStore(st.id)
       const r = await etsy.connectUrl(st.id)
       window.location.href = r.url
