@@ -34,7 +34,7 @@ function ago(t) {
   return `${Math.round(m / 60)}h ago`
 }
 
-export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCreate, onEditing }) {
+export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCreate, onEditing, openListing, onOpenedListing }) {
   const app = useApp()
   const storeId = app.curStoreId
   const [sort, setSort] = useState('exp_late')
@@ -94,6 +94,11 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
     setDetail(null)                                   // stay in edit mode after save
     try { const r = await etsy.listing(storeId, openId); setDetail(r.listing) } catch {}
   }
+  // Launchpad se aaya order: "is (abhi bani) listing ka edit page kholo"
+  useEffect(() => {
+    if (openListing) { open(String(openListing)); onOpenedListing && onOpenedListing() }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openListing])
   const doDelete = async () => {
     if (!confirm('Ye listing Etsy se HAMESHA ke liye delete ho jayegi. Pakka?')) return
     try {

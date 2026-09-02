@@ -177,6 +177,7 @@ function Shell() {
   // edit page khula ho to left FILTER SIDEBAR chhup jata hai (Vela jaisa full-width edit)
   const [editFull, setEditFull] = useState(false)
   const [profEditId, setProfEditId] = useState(null)   // kaunsi profile edit ho rahi hai
+  const [pendingListing, setPendingListing] = useState(null)  // Launchpad → is Etsy listing ka edit page kholo
   const app = useApp()
   const [screen, setScreen] = useState('etsystore')     // Etsy Store is home now
   const [rail, setRail] = useState('listings')          // icon rail: which PANEL shows (listings | profiles)
@@ -282,8 +283,8 @@ function Shell() {
     eff === 'mockups' ? <Mockups /> :
     eff === 'designs' ? <Designs /> :
     eff === 'sets' ? <Sets /> :
-    eff === 'listings' ? <Listings /> :
-    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} onEditing={setEditFull} /> :
+    eff === 'listings' ? <Listings onOpenEtsyListing={(id) => { setPendingListing(String(id)); setRail('listings'); setScreen('etsystore') }} /> :
+    eff === 'etsystore' ? <EtsyStore es={es} state={esState} filt={esFilt} onDeleted={onDeleted} onRefresh={() => loadIndex(true)} onCreate={() => setScreen('listings')} onEditing={setEditFull} openListing={pendingListing} onOpenedListing={() => setPendingListing(null)} /> :
     eff === 'profileedit' ? <ProfileEdit key={profEditId} id={profEditId} onBack={() => setScreen('etsystore')} /> :
     eff === 'account' ? <Account /> :
     <Placeholder title={current ? current.label : ''} />

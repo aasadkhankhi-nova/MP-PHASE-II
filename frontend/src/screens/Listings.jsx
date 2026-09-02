@@ -19,9 +19,8 @@ import { uid } from '../store/helpers.js'
 import { genSeo, getGeminiKey, etsy } from '../api.js'
 import { getProfiles } from '../store/profiles.js'
 import { makeSlideshowVideo } from '../store/video.js'
-import NewListing from './NewListing.jsx'
 
-export default function Listings() {
+export default function Listings({ onOpenEtsyListing }) {
   const app = useApp()
   const [openId, setOpenId] = useState(null)  // which listing is open in the wizard
 
@@ -34,7 +33,7 @@ export default function Listings() {
 
   if (openId) {
     const L = app.ws.listings.find((x) => x.id === openId)
-    if (L) return <ListingWizard L={L} onBack={() => setOpenId(null)} />
+    if (L) return <ListingWizard L={L} onBack={() => setOpenId(null)} onOpenEtsyListing={onOpenEtsyListing} />
   }
 
   return (
@@ -66,15 +65,50 @@ export default function Listings() {
   )
 }
 
-/** The opened listing: 3 steps (designs, mockups, generate) on one page. */
-function ListingWizard({ L, onBack }) {
+/** The opened listing: steps (designs, mockups, profile, generate, draft) on one page. */
+function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const app = useApp()
   const [prog, setProg] = useState(null)   // generation progress {i, n, name}
-  const [finalOpen, setFinalOpen] = useState(false)   // 📝 final check page
+  const [draftBusy, setDraftBusy] = useState(false)   // Etsy par draft ban rahi hai
   const profiles = getProfiles()
   const set = (patch) => app.updListing(L.id, patch)
 
-  if (finalOpen) return <NewListing L={L} onBack={() => setFinalOpen(false)} onSaved={(patch) => set(patch)} />
+  // 5 · FINAL: Etsy par FREE hidden DRAFT banao, phir WOHI asli edit page
+  // kholo jo active listings ka hota hai (100% same — personalization,
+  // variation photos, SKU, sab). Fee sirf Active karne par lagti hai.
+  const makeDraft = async () => {
+    const profile = profiles.find((x) => x.id === L.profileId)
+    if (!profile) return alert('Step 3 me profile chunein')
+    if (!profile.details?.taxonomyId) return alert('Profile me Category set nahi — 🧩 panel se profile edit karein')
+    if (!profile.shipping?.shippingProfileId) return alert('Profile me Shipping profile set nahi — 🧩 panel se profile edit karein')
+    if (!L.seo && !window.confirm('🚀 Generate nahi chala — title/tags/description khali honge (edit page par khud likhne padenge). Phir bhi draft banayein?')) return
+    setDraftBusy(true)
+    try {
+      const photos = [
+        ...(L.outputs || []).map((o) => ({ dataUrl: o.dataUrl })),
+        // profile ki size-chart photos — mockups ke BAAD
+        ...((profile.photos) || []).map((x) => ({ dataUrl: x.dataUrl })),
+      ]
+      const alt = L.seo?.alt || ''
+      const fullDesc = ((L.seo?.description || '').trim() + (profile.desc2 ? '\n\n' + profile.desc2 : '')).trim() || (L.seo?.title || L.name)
+      const r = await etsy.createFull(app.curStoreId, {
+        title: L.seo?.title || L.name,
+        description: fullDesc,
+        tags: L.seo?.tags || [],
+        materials: profile.materials || [],
+        sku: '',                    // SKU aap edit page par khud dalenge
+        state: 'draft',             // hidden + FREE — fee sirf Active par
+        images: photos.slice(0, 20).map((p) => ({ dataUrl: p.dataUrl, alt })),
+        video: L.video || null,
+        details: profile.details || {},
+        shipping: profile.shipping || {},
+        priceQty: { price: Number(profile.priceQty?.price) || 1, quantity: Number(profile.priceQty?.quantity) || 999 },
+        variations: profile.variations || null,
+      })
+      await set({ etsy: { listingId: r.id, url: r.url, at: Date.now() } })
+      onOpenEtsyListing && onOpenEtsyListing(r.id)
+    } catch (e) { alert('⚠ ' + (e.message || e)) } finally { setDraftBusy(false) }
+  }
 
   // toggle helpers for the pick-grids
   const togDesign = (id) =>
@@ -217,14 +251,30 @@ function ListingWizard({ L, onBack }) {
         </div>
       )}
 
-      {/* FINAL page — photos/video/SEO + profile + SKU, aur wahan ka Publish
-          hi Etsy par bhejta hai (draft ya active). Us se pehle kuch nahi jata. */}
+      {/* FINAL — Etsy par FREE hidden draft bana kar WOHI asli edit page kholta
+          hai jo active listings ka hota hai. SKU wahan dalein, phir neeche
+          ⇧ Publish (Active ya Draft rehne do). Fee sirf Active par ($0.20). */}
       {L.outputs?.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>5 · Final check & Publish</h3>
-          <p className="muted">Photos, video, SEO aur profile sab ek page par check karein, SKU dalein, phir ⇧ Publish (Active ya Draft). <b>Publish se pehle Etsy par kuch nahi jata.</b></p>
-          <button className="btn" onClick={() => setFinalOpen(true)}>📝 Final page kholein</button>
-          {L.etsy?.url && <p className="muted" style={{ marginTop: 8 }}>🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par listing dekhein</a></p>}
+          {L.etsy?.listingId ? (
+            <>
+              <p className="muted">Ye listing Etsy par ban chuki hai — wohi poora edit page kholein (photos, video, title, tags, details, variations, personalization, shipping — sab wahan).</p>
+              <button className="btn" onClick={() => onOpenEtsyListing && onOpenEtsyListing(L.etsy.listingId)}>📝 Edit page kholein</button>
+              <p className="muted" style={{ marginTop: 8 }}>🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par dekhein</a></p>
+            </>
+          ) : (
+            <>
+              <p className="muted">
+                Ye button Etsy par ek <b>hidden FREE draft</b> banata hai (buyers ko nazar nahi aata, koi fee nahi) aur
+                phir <b>wohi poora edit page</b> kholta hai jo aapki active listings ka hota hai — wahan sab final check
+                karein, SKU dalein, aur neeche <b>⇧ Publish → Active</b> karein ($0.20 fee sirf tab) ya Draft hi rehne dein.
+              </p>
+              <button className="btn" disabled={draftBusy} onClick={makeDraft}>
+                {draftBusy ? '⏳ Draft ban rahi hai… (photos/video upload — 1–3 min)' : '📝 Draft banao & edit page kholo'}
+              </button>
+            </>
+          )}
         </div>
       )}
 
