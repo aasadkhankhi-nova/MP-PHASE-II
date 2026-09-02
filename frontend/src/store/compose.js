@@ -39,26 +39,21 @@ export const pick = (cand, tag) => {
 }
 
 /**
- * matchDesign — the core matching rule (ported from the legacy app):
- * 1. If the box targets a design number ('single' or '1'..'8'):
- *    only designs with that same number qualify; prefer matching placement,
- *    then pick the right color variant.
- * 2. If the box is 'any': match by placement first; agar us placement ka
- *    KOI design nahi hai to baqi designs me se sahi color-variant utha lo
- *    (box banaya hai to usme print aani chahiye — pehle wala code aise box
- *    ko khali chor deta tha, is liye "pocket" box me kuch nahi aata tha).
- * Returns null only when there is truly nothing usable.
+ * matchDesign — core matching rule (PLACEMENT hamesha STRICT):
+ *   - Box ka placement design ke placement se EXACT match hona zaruri hai:
+ *     "front" box me sirf front-placement design aata hai, "pocket" box me
+ *     sirf pocket-placement design. Placement kabhi ignore NAHI hota.
+ *   - Design # ('single' / 1..8) us par MAZEED filter hai — placement ka
+ *     substitute nahi. "front · single" ka matlab: front placement WALA
+ *     single-number design; pocket box us se kabhi nahi bharta.
+ *   - Aakhir me color-variant (light/dark area) se sahi version chunta hai.
+ * Match na mile to null -> box khali rehta hai aur "missed" report hota hai
+ * (e.g. pocket box banaya lekin pocket-placement ka design upload nahi kiya).
  */
 export function matchDesign(designs, box) {
   const target = boxDnum(box)
-  if (target !== 'any') {
-    const inNum = designs.filter((d) => desDnum(d) === target)
-    let cand = inNum.filter((d) => d.placement === box.name)
-    if (!cand.length) cand = inNum   // number chosen but placement differs -> still use that artwork
-    return cand.length ? pick(cand, box.tag) || cand[0] : null
-  }
-  let cand = designs.filter((d) => d.placement === box.name)
-  if (!cand.length) cand = designs   // placement ka design nahi -> koi bhi (variant se chunega)
+  let cand = designs.filter((d) => d.placement === box.name)   // STRICT placement
+  if (target !== 'any') cand = cand.filter((d) => desDnum(d) === target)
   if (!cand.length) return null
   return pick(cand, box.tag) || cand[0]
 }
