@@ -79,8 +79,9 @@ function ShopSwitcher({ app, screen, go }) {
         }
       })
       .catch(() => {})
+    // stores load hone par (bhi) chale — CONNECTING_ID guard mid-flow store bachata hai
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app.authed])
+  }, [app.authed, app.stores.length])
 
   if (!app.stores.length) return null
   const cur = app.curStore
