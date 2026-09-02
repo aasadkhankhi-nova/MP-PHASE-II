@@ -543,8 +543,10 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
         await reg.current[k]()   // photos order / variations / personalization
       }
       if (changing) await etsy.setState(storeId, detail.id, target)
-      setMsg(changing && target === 'active' ? '🚀 Save + listing LIVE ho gayi!' : changing ? '📝 Save + listing draft ho gayi' : '✅ Sab kuch Etsy par save ho gaya')
-      setTimeout(onDone, 900)
+      setMsg(changing && target === 'active'
+        ? '🚀 LISTING PUBLISH HO GAYI — Etsy par turant LIVE hai ("View on Etsy" se dekhein). Search results me aane me kuch ghante lag sakte hain. App ki Active list me lane ke liye upar ⟳ Refresh dabayein.'
+        : changing ? '📝 Save ho gaya + listing DRAFT ho gayi (buyers se hidden).' : '✅ Sab kuch Etsy par save ho gaya')
+      setTimeout(onDone, changing ? 3500 : 900)   // publish ka msg parhne ka waqt milay
     } catch (e) { setMsg('⚠ ' + (e.message || e)) } finally { setBusy(false) }
   }
 
