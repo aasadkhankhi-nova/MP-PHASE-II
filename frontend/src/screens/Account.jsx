@@ -290,6 +290,7 @@ function ImportCard() {
   const app = useApp()
   const [prog, setProg] = useState(null)   // "store 1/3 · image 12/80"
   const [iMsg, setIMsg] = useState(null)
+  const [pick, setPick] = useState(null)   // merge-mode: .mpbackup ke stores me se kaunsa is store me dalna hai
 
   const mapDesign = (d) => ({
     id: d.id, name: d.name, dataUrl: d.dataUrl,
@@ -338,6 +339,41 @@ function ImportCard() {
     }
   }
 
+  // ---- MERGE mode: file parho, phir chunein kaunse Phase-I store ka data
+  //      ISI (current, Etsy-connected) store me dalna hai ----
+  const doMergeFile = async (file) => {
+    if (!file) return
+    setIMsg(null)
+    try {
+      const data = JSON.parse(await file.text())
+      let stores = []
+      if (data.kind === 'mpbackup' && Array.isArray(data.stores)) {
+        stores = data.stores
+          .filter((s) => s.ws && ((s.ws.mockups || []).length || (s.ws.designs || []).length))
+          .map((s) => ({ name: s.store?.name || 'Imported', ws: s.ws }))
+      } else if (data.mockups || data.designs) {
+        stores = [{ name: file.name.replace(/\.[^.]+$/, ''), ws: data }]
+      }
+      if (!stores.length) throw new Error('Is file me koi store data nahi mila')
+      if (stores.length === 1) return doMerge(stores[0])
+      setPick(stores)   // multiple stores — user chunega
+    } catch (e) { setIMsg('⚠ ' + (e.message || e)) }
+  }
+  const doMerge = async (s) => {
+    setPick(null)
+    if (!confirm(`"${s.name}" ka data (${(s.ws.mockups || []).length} mockups, ${(s.ws.designs || []).length} designs) ISI store "${app.curStore?.name}" me add ho jayega. Theek hai?`)) return
+    try {
+      const ws = {
+        mockups: (s.ws.mockups || []).map(mapMockup),
+        designs: (s.ws.designs || []).map(mapDesign),
+        sets: (s.ws.sets || []).map((x) => ({ id: x.id, name: x.name })),
+      }
+      const r = await app.importIntoCurrent(ws, (i, n) => setProg(`"${s.name}" → is store me · image ${i}/${n} upload…`))
+      setProg(null)
+      setIMsg(`✅ "${s.name}" is store me aa gaya — ${r.mockups} mockups (boxes samet), ${r.designs} designs, ${r.sets} sets.`)
+    } catch (e) { setProg(null); setIMsg('⚠ ' + (e.message || e)) }
+  }
+
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>📂 Import (purani MP Phase I app se)</h3>
@@ -349,11 +385,37 @@ function ImportCard() {
       {prog ? (
         <p className="muted">⏳ {prog}</p>
       ) : (
-        <label className="btn ghost" style={{ cursor: 'pointer' }}>
-          📂 File chunein (.mpbackup / .mpproj)
-          <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
-            onChange={(e) => { doImport(e.target.files[0]); e.target.value = '' }} />
-        </label>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <label className="btn ghost" style={{ cursor: 'pointer' }}>
+            📂 Naye store(s) banao (.mpbackup / .mpproj)
+            <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
+              onChange={(e) => { doImport(e.target.files[0]); e.target.value = '' }} />
+          </label>
+          {app.curStoreId && (
+            <label className="btn ghost" style={{ cursor: 'pointer' }}>
+              📥 ISI store ({app.curStore?.name}) me dalo
+              <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
+                onChange={(e) => { doMergeFile(e.target.files[0]); e.target.value = '' }} />
+            </label>
+          )}
+        </div>
+      )}
+      <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+        📥 wala button un ke liye jo pehle Etsy shops OAuth se connect kar chuke hain: har shop khol kar
+        us shop wale Phase-I store ka data usi me merge karein — mockups apne boxes samet aate hain.
+      </p>
+      {pick && (
+        <div style={{ marginTop: 10, border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Backup me {pick.length} stores hain — kaunse ka data <b>{app.curStore?.name}</b> me dalna hai?</p>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {pick.map((s, i) => (
+              <button key={i} className="btn sm ghost" onClick={() => doMerge(s)}>
+                🏬 {s.name} ({(s.ws.mockups || []).length}m · {(s.ws.designs || []).length}d)
+              </button>
+            ))}
+            <button className="btn sm ghost" onClick={() => setPick(null)}>✕ Cancel</button>
+          </div>
+        </div>
       )}
       {iMsg && <p className="muted" style={{ marginTop: 8 }}>{iMsg}</p>}
     </div>

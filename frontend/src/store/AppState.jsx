@@ -263,6 +263,44 @@ export function AppStateProvider({ children }) {
       return st
     },
 
+    // importIntoCurrent — Phase I ka EK store ka data ISI (current) store me
+    // MERGE karta hai (naya store nahi banta). Etsy-OAuth se connected store
+    // me purana kaam laane ke liye. Id-clash par nayi id, sets ka link qaim.
+    async importIntoCurrent(incoming, onProgress) {
+      if (!curStoreId) throw new Error('Pehle koi store select karein')
+      const wsAdd = {
+        mockups: incoming.mockups || [],
+        designs: incoming.designs || [],
+        sets: incoming.sets || [],
+      }
+      const items = [...wsAdd.mockups, ...wsAdd.designs]
+      for (let i = 0; i < items.length; i++) {
+        if (onProgress) onProgress(i + 1, items.length)
+        if (authed && items[i].dataUrl && !items[i].imageUrl) {
+          try { items[i].imageUrl = await uploadImage(items[i].dataUrl, items[i].name || 'img') } catch {}
+        }
+      }
+      const cur = wsRef.current
+      const exist = new Set([...cur.mockups, ...cur.designs, ...cur.sets].map((x) => x.id))
+      const setMap = {}
+      const sets = wsAdd.sets.map((s) => {
+        if (!exist.has(s.id)) return s
+        const ns = { ...s, id: uid() }; setMap[s.id] = ns.id; return ns
+      })
+      const mockups = wsAdd.mockups.map((m) => ({
+        ...(exist.has(m.id) ? { ...m, id: uid() } : m),
+        setIds: (m.setIds || []).map((id) => setMap[id] || id),
+      }))
+      const designs = wsAdd.designs.map((d) => (exist.has(d.id) ? { ...d, id: uid() } : d))
+      await saveWs(curStoreId, {
+        ...cur,
+        mockups: [...cur.mockups, ...mockups],
+        designs: [...cur.designs, ...designs],
+        sets: [...cur.sets, ...sets],
+      })
+      return { mockups: mockups.length, designs: designs.length, sets: sets.length }
+    },
+
     // ---- mockups ----
     // On upload: read file -> auto light/dark tag -> (if logged in) upload
     // the image to cloud Storage so other devices can see it too.
