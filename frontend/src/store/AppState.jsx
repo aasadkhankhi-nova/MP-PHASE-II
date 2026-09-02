@@ -263,7 +263,8 @@ export function AppStateProvider({ children }) {
     // ---- mockups ----
     // On upload: read file -> auto light/dark tag -> (if logged in) upload
     // the image to cloud Storage so other devices can see it too.
-    async addMockupFiles(files) {
+    // setIds (optional): naye mockups seedha in sets me chale jayen (Sets screen se upload)
+    async addMockupFiles(files, setIds = []) {
       let n = 0, failed = 0
       const items = []
       for (const f of files) {
@@ -275,7 +276,7 @@ export function AppStateProvider({ children }) {
           try { imageUrl = await uploadImage(dataUrl, f.name) }
           catch { try { imageUrl = await uploadImage(dataUrl, f.name) } catch { failed++ } }  // ek retry, phir warn
         }
-        items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, colorTag: tag, boxes: [], setIds: [] })
+        items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, colorTag: tag, boxes: [], setIds: [...setIds] })
         n++
       }
       if (n) await saveWs(curStoreId, { ...wsRef.current, mockups: [...wsRef.current.mockups, ...items] })
