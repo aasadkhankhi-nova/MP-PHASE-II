@@ -54,6 +54,7 @@ export default function ProfileEdit({ id, onBack }) {
   const [msg, setMsg] = useState(null)
   const [matIn, setMatIn] = useState('')
   const [addIn, setAddIn] = useState({})
+  const [vtab, setVtab] = useState('vars')   // vars|price|qty|sku|vis|photos|proc — bilkul listing edit jaisa
   // live Etsy data (wahi sab jo listing edit page par hai)
   const [sections, setSections] = useState(null)
   const [enums, setEnums] = useState(null)
@@ -362,86 +363,120 @@ export default function ProfileEdit({ id, onBack }) {
         </div>
       )}
 
-      {/* ---- Variations (profile ki apni) ---- */}
+      {/* ---- Variations — BILKUL listing edit page jaisa (wahi sub-tabs, wahi layout) ---- */}
       {prods.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Variations <span className="chip">{prods.length} combos</span></h3>
-          {prods.length > 399 && <p className="err-msg">⚠ Should not exceed 400 options combinations</p>}
+          {prods.length > 399 && (
+            <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>⚠ Should not exceed 400 options combinations — abhi {prods.length} hain.</p>
+          )}
 
-          <div className="vpanels" style={{ marginBottom: 14 }}>
-            {plist.map((P) => (
-              <div key={P.id} className="vpanel">
-                <div className="vpanel-head"><b>{P.name}</b><span className="chip">{P.options.length}</span></div>
-                <div className="vopt-list">
-                  {P.options.map((o) => (
-                    <div key={o.value} className="vopt">
-                      <span className="ellip">{o.value}</span>
-                      <button className="ph-tool" title="Delete option" onClick={() => delOption(P, o.value)}>🗑</button>
-                    </div>
-                  ))}
-                </div>
-                <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                  <input placeholder="Add option" value={addIn[P.id] || ''} onChange={(e) => setAddIn({ ...addIn, [P.id]: e.target.value })}
-                    onKeyDown={(e) => e.key === 'Enter' && addOption(P)} style={{ flex: 1 }} />
-                  <button className="btn sm ghost" onClick={() => addOption(P)}>Add</button>
-                </div>
-              </div>
+          {/* sub-tabs (Vela jaisa — wahi jo listing edit me hain) */}
+          <div className="vtabs">
+            {[['vars', 'Variations'], ['price', 'Price'], ['qty', 'Quantity'], ['sku', 'SKU'], ['vis', 'Visibility'], ['photos', 'Photos'], ['proc', 'Processing']].map(([tid, label]) => (
+              <button key={tid} className={'vtab' + (vtab === tid ? ' on' : '')} onClick={() => setVtab(tid)}>{label}</button>
             ))}
           </div>
 
-          {/* Individual price / quantity per property */}
-          {['price', 'quantity'].map((field) => {
-            const flags = field === 'price' ? pOn : qOn
-            const key = field === 'price' ? 'pOn' : 'qOn'
+          {/* --- Variations: har property ka panel — options + Add/Delete --- */}
+          {vtab === 'vars' && (
+            <div className="vpanels">
+              {plist.map((P) => (
+                <div key={P.id} className="vpanel">
+                  <div className="vpanel-head"><b>{P.name}</b><span className="chip">{P.options.length}</span></div>
+                  <div className="vopt-list">
+                    {P.options.map((o) => (
+                      <div key={o.value} className="vopt">
+                        <span className="ellip">{o.value}</span>
+                        <button className="ph-tool" title="Delete option" onClick={() => delOption(P, o.value)}>🗑</button>
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+                    <input placeholder="Add option" value={addIn[P.id] || ''} onChange={(e) => setAddIn({ ...addIn, [P.id]: e.target.value })}
+                      onKeyDown={(e) => e.key === 'Enter' && addOption(P)} style={{ flex: 1 }} />
+                    <button className="btn sm ghost" onClick={() => addOption(P)}>Add</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* --- Price / Quantity: "Individual ..." checkbox per property (listing edit jaisa) --- */}
+          {(vtab === 'price' || vtab === 'qty') && (() => {
+            const conf = vtab === 'price'
+              ? { on: pOn, key: 'pOn', field: 'price', label: 'price' }
+              : { on: qOn, key: 'qOn', field: 'quantity', label: 'quantity' }
             return (
-              <div key={field} style={{ marginBottom: 12 }}>
-                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 8 }}>
+              <div>
+                <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', marginBottom: 10 }}>
                   {plist.map((P) => (
                     <label key={P.id} style={{ display: 'flex', gap: 7, alignItems: 'center', cursor: 'pointer', fontWeight: 600, fontSize: 13.5 }}>
-                      <input type="checkbox" checked={flags.includes(P.id)}
-                        onChange={() => setFlags(key, flags.includes(P.id) ? flags.filter((x) => x !== P.id) : [...flags, P.id])} />
-                      Individual {field} — {P.name}
+                      <input type="checkbox" checked={conf.on.includes(P.id)}
+                        onChange={() => setFlags(conf.key, conf.on.includes(P.id) ? conf.on.filter((x) => x !== P.id) : [...conf.on, P.id])} />
+                      Individual {conf.label} — {P.name}
                     </label>
                   ))}
                 </div>
-                {flags.length > 0 && (
+                {!conf.on.length && (
+                  <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
+                    <label className="muted" style={{ fontSize: 12 }}>Individual OFF hai — sab combos ki EK {conf.label}:</label>
+                    <input type="number" step={vtab === 'price' ? '0.01' : '1'} value={prods[0]?.[conf.field] || ''}
+                      onChange={(e) => setProds(prods.map((r) => ({ ...r, [conf.field]: e.target.value })))} style={{ width: 110 }} />
+                  </span>
+                )}
+                {conf.on.length > 0 && (
                   <div className="vrows">
-                    {groupRows(flags).map(([label, idxs]) => (
+                    {groupRows(conf.on).map(([label, idxs]) => (
                       <div key={label} className="vrow">
                         <span className="ellip" style={{ flex: 1 }}>{label}</span>
-                        <input type="number" step={field === 'price' ? '0.01' : '1'} value={prods[idxs[0]][field] ?? ''}
-                          onChange={(e) => setGroup(field, idxs, e.target.value)} style={{ width: 110 }} />
+                        <input type="number" step={vtab === 'price' ? '0.01' : '1'} value={prods[idxs[0]][conf.field] ?? ''}
+                          onChange={(e) => setGroup(conf.field, idxs, e.target.value)} style={{ width: 110 }} />
                       </div>
                     ))}
                   </div>
                 )}
-                {!flags.length && field === 'price' && (
-                  <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                    <label className="muted" style={{ fontSize: 12 }}>Sab ki EK price:</label>
-                    <input type="number" step="0.01" value={prods[0]?.price || ''} onChange={(e) => setProds(prods.map((r) => ({ ...r, price: e.target.value })))} style={{ width: 110 }} />
-                  </span>
-                )}
-                {!flags.length && field === 'quantity' && (
-                  <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                    <label className="muted" style={{ fontSize: 12 }}>Sab ki EK quantity:</label>
-                    <input type="number" value={prods[0]?.quantity || ''} onChange={(e) => setProds(prods.map((r) => ({ ...r, quantity: e.target.value })))} style={{ width: 110 }} />
-                  </span>
-                )}
               </div>
             )
-          })}
+          })()}
 
-          {/* visibility */}
-          <label className="muted" style={{ fontSize: 12 }}>Visibility (kaunse combos on hain)</label>
-          <div className="vrows" style={{ marginTop: 4 }}>
-            {prods.map((r, i) => (
-              <div key={i} className="vrow" style={{ opacity: r.enabled !== false ? 1 : 0.55 }}>
-                <span className="ellip" style={{ flex: 1 }}>{comboLabel(r)}</span>
-                <button className={'vswitch' + (r.enabled !== false ? ' on' : '')} onClick={() => setProds(prods.map((x, xi) => (xi === i ? { ...x, enabled: !(x.enabled !== false) } : x)))} />
-              </div>
-            ))}
-          </div>
-          <button className="btn sm ghost" style={{ marginTop: 10 }} onClick={() => { if (confirm('Variations profile se hata dein? (price/qty wapas single ho jayega)')) u({ variations: null }) }}>🗑 Variations hatao</button>
+          {/* --- SKU: profile me kabhi store nahi hota (aapka rule) --- */}
+          {vtab === 'sku' && (
+            <p className="muted" style={{ fontSize: 13 }}>
+              SKU profile ka hissa <b>nahi</b> hota — har nayi listing me SKU aap khud, end me, final-check page par dalte hain.
+            </p>
+          )}
+
+          {/* --- Visibility: har combo ka on/off toggle --- */}
+          {vtab === 'vis' && (
+            <div className="vrows">
+              {prods.map((r, i) => (
+                <div key={i} className="vrow" style={{ opacity: r.enabled !== false ? 1 : 0.55 }}>
+                  <span className="ellip" style={{ flex: 1 }}>{comboLabel(r)}</span>
+                  <button className={'vswitch' + (r.enabled !== false ? ' on' : '')} title={r.enabled !== false ? 'On' : 'Off'}
+                    onClick={() => setProds(prods.map((x, xi) => (xi === i ? { ...x, enabled: !(x.enabled !== false) } : x)))} />
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* --- Photos: variation-photos listing ki hoti hain, profile ki nahi --- */}
+          {vtab === 'photos' && (
+            <p className="muted" style={{ fontSize: 13 }}>
+              Variation photos har listing ki APNI photos se link hoti hain, is liye ye profile me store nahi hotin —
+              listing ke edit page par isi naam ke tab me set karein.
+            </p>
+          )}
+
+          {/* --- Processing: Etsy API me per-variation processing nahi hota --- */}
+          {vtab === 'proc' && (
+            <p className="muted" style={{ fontSize: 13 }}>
+              Processing time Etsy me shipping/readiness profile ke saath aata hai — Etsy ki API per-variation
+              processing set karne ki ijazat nahi deti. General profile neeche <b>Shipping</b> card me set hota hai.
+            </p>
+          )}
+
+          <button className="btn sm ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('Variations profile se hata dein? (price/qty wapas single ho jayega)')) u({ variations: null }) }}>🗑 Variations hatao</button>
         </div>
       )}
 
