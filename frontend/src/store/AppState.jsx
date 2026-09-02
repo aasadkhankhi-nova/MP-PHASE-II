@@ -25,6 +25,32 @@ import { getSession, setSession, cloudStores, cloudWs, uploadImage } from '../ap
 const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
 
+/**
+ * shrinkForCloud — CLOUD copy ke liye photo compress (Supabase Storage sirf
+ * 1 GB free hai). Max 2000px — Etsy ki recommended quality barqarar rehti hai.
+ * Mockups = JPEG (chhota), designs = PNG (transparency zaruri hai).
+ * LOCAL copy full-size hi rehti hai; sirf upload hone wali copy chhoti hoti hai.
+ */
+function shrinkForCloud(dataUrl, { png = false } = {}) {
+  return new Promise((resolve) => {
+    const im = new Image()
+    im.onload = () => {
+      try {
+        const k = Math.min(1, 2000 / Math.max(im.width, im.height))
+        if (k === 1 && !png) {
+          // already chhoti + JPEG chahiye — phir bhi JPEG me convert (PNG mockup bara hota hai)
+        }
+        const c = document.createElement('canvas')
+        c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k))
+        c.getContext('2d').drawImage(im, 0, 0, c.width, c.height)
+        resolve(png ? c.toDataURL('image/png') : c.toDataURL('image/jpeg', 0.85))
+      } catch { resolve(dataUrl) }
+    }
+    im.onerror = () => resolve(dataUrl)
+    im.src = dataUrl
+  })
+}
+
 const EMPTY_WS = { mockups: [], designs: [], sets: [], listings: [] }
 
 /**
@@ -182,7 +208,8 @@ export function AppStateProvider({ children }) {
           if (storeRef.current !== storeId) return
           if (it.imageUrl || !String(it.dataUrl || '').startsWith('data:')) continue
           try {
-            const url = await uploadImage(it.dataUrl, it.name || 'img')
+            const up = await shrinkForCloud(it.dataUrl, { png: kind === 'designs' })
+            const url = await uploadImage(up, it.name || 'img')
             await saveWs(storeId, { ...wsRef.current, [kind]: wsRef.current[kind].map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
           } catch { /* agli bar (boot/sync) par phir try hoga */ }
         }
@@ -251,10 +278,14 @@ export function AppStateProvider({ children }) {
         listings: [],
       }
       const items = [...wsNew.mockups, ...wsNew.designs]
+      const nMock = wsNew.mockups.length
       for (let i = 0; i < items.length; i++) {
         if (onProgress) onProgress(i + 1, items.length)
         if (authed && items[i].dataUrl && !items[i].imageUrl) {
-          try { items[i].imageUrl = await uploadImage(items[i].dataUrl, items[i].name || 'img') } catch {}
+          try {
+            const up = await shrinkForCloud(items[i].dataUrl, { png: i >= nMock })  // designs PNG, mockups JPEG
+            items[i].imageUrl = await uploadImage(up, items[i].name || 'img')
+          } catch {}
         }
       }
       await kvSet('ws:' + st.id, wsNew)
@@ -274,10 +305,14 @@ export function AppStateProvider({ children }) {
         sets: incoming.sets || [],
       }
       const items = [...wsAdd.mockups, ...wsAdd.designs]
+      const nMock2 = wsAdd.mockups.length
       for (let i = 0; i < items.length; i++) {
         if (onProgress) onProgress(i + 1, items.length)
         if (authed && items[i].dataUrl && !items[i].imageUrl) {
-          try { items[i].imageUrl = await uploadImage(items[i].dataUrl, items[i].name || 'img') } catch {}
+          try {
+            const up = await shrinkForCloud(items[i].dataUrl, { png: i >= nMock2 })
+            items[i].imageUrl = await uploadImage(up, items[i].name || 'img')
+          } catch {}
         }
       }
       const cur = wsRef.current
@@ -314,8 +349,9 @@ export function AppStateProvider({ children }) {
         const tag = await detectTag(dataUrl)
         let imageUrl = null
         if (authed) {
-          try { imageUrl = await uploadImage(dataUrl, f.name) }
-          catch { try { imageUrl = await uploadImage(dataUrl, f.name) } catch { failed++ } }  // ek retry, phir warn
+          const up = await shrinkForCloud(dataUrl)   // cloud copy 2000px JPEG (storage bachao)
+          try { imageUrl = await uploadImage(up, f.name) }
+          catch { try { imageUrl = await uploadImage(up, f.name) } catch { failed++ } }  // ek retry, phir warn
         }
         items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, colorTag: tag, boxes: [], setIds: [...setIds] })
         n++
@@ -341,8 +377,9 @@ export function AppStateProvider({ children }) {
         const g = guessFromName(f.name)
         let imageUrl = null
         if (authed) {
-          try { imageUrl = await uploadImage(dataUrl, f.name) }
-          catch { try { imageUrl = await uploadImage(dataUrl, f.name) } catch { failed++ } }
+          const up = await shrinkForCloud(dataUrl, { png: true })   // design = PNG (transparency), max 2000px
+          try { imageUrl = await uploadImage(up, f.name) }
+          catch { try { imageUrl = await uploadImage(up, f.name) } catch { failed++ } }
         }
         items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, placement: g.placement, variant: g.variant, dnum: 'single' })
         n++
