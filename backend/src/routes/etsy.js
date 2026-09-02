@@ -53,15 +53,33 @@ const b64url = (buf) => buf.toString('base64').replace(/\+/g, '-').replace(/\//g
 const makeVerifier = () => b64url(crypto.randomBytes(32))
 const challengeOf = (v) => b64url(crypto.createHash('sha256').update(v).digest())
 
-// The OAuth "state" survives the round-trip to Etsy in this in-memory map.
-// (10-minute TTL; if the server restarts mid-flow the user just clicks again.)
-const STATES = new Map()
-function putState(data) {
+// The OAuth "state" survives the round-trip to Etsy in the DATABASE —
+// pehle in-memory Map thi, lekin Render free server deploy/neend par restart
+// hota hai aur beech ki OAuth toot jati thi ("Session expire"). DB me 10-min
+// TTL ke sath rakhne se restart ke aar-paar bhi connect mukammal hota hai.
+let stTableReady = false
+async function ensureStateTable() {
+  if (stTableReady) return
+  await q(`create table if not exists etsy_oauth_states (
+    id text primary key, verifier text not null, store_id text not null,
+    user_id text not null, exp bigint not null)`)
+  stTableReady = true
+}
+async function putState(data) {
+  await ensureStateTable()
   const id = b64url(crypto.randomBytes(16))
-  STATES.set(id, { ...data, exp: Date.now() + 10 * 60 * 1000 })
-  // sweep old entries so the map never grows forever
-  for (const [k, v] of STATES) if (v.exp < Date.now()) STATES.delete(k)
+  await q('insert into etsy_oauth_states (id, verifier, store_id, user_id, exp) values ($1,$2,$3,$4,$5)',
+    [id, data.verifier, data.storeId, data.userId, Date.now() + 10 * 60 * 1000])
+  // sweep old entries so the table never grows forever
+  await q('delete from etsy_oauth_states where exp < $1', [Date.now()])
   return id
+}
+async function takeState(id) {
+  await ensureStateTable()
+  const rows = await q('select * from etsy_oauth_states where id=$1', [id])
+  await q('delete from etsy_oauth_states where id=$1', [id])
+  const r = rows[0]
+  return r ? { verifier: r.verifier, storeId: r.store_id, userId: r.user_id, exp: Number(r.exp) } : null
 }
 
 // Does this MP store belong to the logged-in user?
@@ -139,7 +157,7 @@ router.get('/connect', requireUser, async (req, res) => {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const verifier = makeVerifier()
-    const state = putState({ verifier, storeId, userId: req.user.id })
+    const state = await putState({ verifier, storeId, userId: req.user.id })
     const url = 'https://www.etsy.com/oauth/connect' +
       `?response_type=code&client_id=${encodeURIComponent(key())}` +
       `&redirect_uri=${encodeURIComponent(REDIRECT)}` +
@@ -158,8 +176,7 @@ router.get('/callback', async (req, res) => {
   try {
     const { code, state, error, error_description } = req.query
     if (error) return back('error:' + (error_description || error))
-    const st = STATES.get(state)
-    STATES.delete(state)
+    const st = await takeState(state)
     if (!st || st.exp < Date.now()) return back('error:Session expire ho gayi — dobara Connect dabayein')
 
     // code -> tokens
