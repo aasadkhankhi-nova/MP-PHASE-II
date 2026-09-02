@@ -26,21 +26,63 @@ export function setSession(s) {
 }
 
 /**
+ * refreshSession — login-token ki meyaad (~1 ghanta) khatam hone par
+ * refresh_token se NAYA token le kar session taza karta hai — user ko
+ * dobara login nahi karna parta. Ek waqt me ek hi refresh chalta hai.
+ */
+let REFRESHING = null
+async function refreshSession() {
+  const s = getSession()
+  if (!s?.refresh_token) return null
+  if (REFRESHING) return REFRESHING
+  REFRESHING = (async () => {
+    try {
+      const res = await fetch(`${getApiBase()}/api/auth/refresh`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: s.refresh_token }),
+      })
+      const j = await res.json().catch(() => ({}))
+      if (!res.ok || !j.session?.access_token) return null
+      const next = {
+        ...s,
+        access_token: j.session.access_token,
+        refresh_token: j.session.refresh_token || s.refresh_token,
+        exp: Date.now() + Math.max(60, (j.session.expires_in || 3600) - 120) * 1000,
+      }
+      setSession(next)
+      return next
+    } catch { return null } finally { REFRESHING = null }
+  })()
+  return REFRESHING
+}
+
+/**
  * api — generic request helper.
  * - adds JSON headers + the auth token
- * - on 401 (expired login) it clears the session so the app shows Login again
+ * - token purana ho (exp guzar gaya) to PEHLE khud refresh karta hai
+ * - 401 par ek bar refresh kar ke request DOBARA bhejta hai;
+ *   refresh bhi fail ho tab hi session saaf hota hai (Login screen)
  * - on any error it throws with the server's error message
  */
 export async function api(path, options = {}) {
-  const s = getSession()
-  const res = await fetch(`${getApiBase()}${path}`, {
+  let s = getSession()
+  // token expiry ke qareeb/paar? pehle hi taza kar lo
+  if (s?.refresh_token && s.exp && Date.now() > s.exp) {
+    s = (await refreshSession()) || s
+  }
+  const doFetch = (sess) => fetch(`${getApiBase()}${path}`, {
     headers: {
       'Content-Type': 'application/json',
-      ...(s?.access_token ? { Authorization: `Bearer ${s.access_token}` } : {}),
+      ...(sess?.access_token ? { Authorization: `Bearer ${sess.access_token}` } : {}),
       ...(options.headers || {}),
     },
     ...options,
   })
+  let res = await doFetch(s)
+  if (res.status === 401 && s?.refresh_token) {
+    const ns = await refreshSession()
+    if (ns) res = await doFetch(ns)
+  }
   if (res.status === 401) { setSession(null) }
   if (!res.ok) {
     let msg = `API ${res.status}`
@@ -112,7 +154,12 @@ export function captureOAuthSession() {
     const m = payload.user_metadata || {}
     user = { id: payload.sub, email: payload.email, name: m.full_name || m.name || '' }
   } catch {}
-  const sess = { access_token: token, user }
+  const sess = {
+    access_token: token,
+    refresh_token: p.get('refresh_token') || null,   // auto-refresh ke liye
+    exp: Date.now() + Math.max(60, (Number(p.get('expires_in')) || 3600) - 120) * 1000,
+    user,
+  }
   setSession(sess)
   // Remove the tokens from the address bar (looks clean + safer)
   history.replaceState(null, '', window.location.pathname + window.location.search)
@@ -139,7 +186,7 @@ const nameOf = (u) => u?.user_metadata?.full_name || [u?.user_metadata?.first_na
 export async function authLogin(email, password, captchaToken = '') {
   const r = await api('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password, captchaToken }) })
   const u = r.session.user
-  const sess = { access_token: r.session.access_token, user: { id: u?.id, email: u?.email || email, name: nameOf(u) } }
+  const sess = { access_token: r.session.access_token, refresh_token: r.session.refresh_token || null, exp: Date.now() + Math.max(60, (r.session.expires_in || 3600) - 120) * 1000, user: { id: u?.id, email: u?.email || email, name: nameOf(u) } }
   setSession(sess)
   return sess
 }
@@ -148,7 +195,7 @@ export async function authSignup(email, password, meta = {}, captchaToken = '') 
   const r = await api('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password, meta, captchaToken }) })
   if (r.session?.access_token) {
     const u = r.session.user || r.user
-    const sess = { access_token: r.session.access_token, user: { id: u?.id, email, name: nameOf(u) || meta.full_name || '' } }
+    const sess = { access_token: r.session.access_token, refresh_token: r.session.refresh_token || null, exp: Date.now() + Math.max(60, (r.session.expires_in || 3600) - 120) * 1000, user: { id: u?.id, email, name: nameOf(u) || meta.full_name || '' } }
     setSession(sess)
     return sess
   }
@@ -159,7 +206,7 @@ export async function authSignup(email, password, meta = {}, captchaToken = '') 
 // On success Supabase returns a real session -> user is logged in.
 export async function authVerify(email, code) {
   const r = await api('/api/auth/verify', { method: 'POST', body: JSON.stringify({ email, token: code }) })
-  const sess = { access_token: r.session.access_token, user: { id: r.session.user?.id, email: r.session.user?.email || email } }
+  const sess = { access_token: r.session.access_token, refresh_token: r.session.refresh_token || null, exp: Date.now() + Math.max(60, (r.session.expires_in || 3600) - 120) * 1000, user: { id: r.session.user?.id, email: r.session.user?.email || email } }
   setSession(sess)
   return sess
 }

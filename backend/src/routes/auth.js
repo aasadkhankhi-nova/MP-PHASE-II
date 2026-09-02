@@ -41,6 +41,20 @@ router.post('/login', async (req, res) => {
   } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
+// POST /api/auth/refresh { refresh_token } -> { session }
+// Login-token ~1 ghante me expire hota hai; frontend is se chupchap naya
+// token le leta hai — user ko dobara login nahi karna parta.
+router.post('/refresh', async (req, res) => {
+  try {
+    const { refresh_token } = req.body
+    if (!refresh_token) return res.status(400).json({ ok: false, error: 'refresh_token required' })
+    const r = await fetch(gotrue('/token?grant_type=refresh_token'), { method: 'POST', headers: headers(), body: JSON.stringify({ refresh_token }) })
+    const j = await r.json()
+    if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.error_description || j.message || 'refresh failed' })
+    res.json({ ok: true, session: j })
+  } catch (e) { res.status(500).json({ ok: false, error: e.message }) }
+})
+
 // POST /api/auth/verify { email, token }
 // User typed the 6-digit code from their email. We ask Supabase to check it.
 // If correct, Supabase returns a full session (access_token) = user is logged in.
