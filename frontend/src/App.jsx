@@ -241,8 +241,8 @@ function Shell() {
     return f
   }, [es.idx])
 
-  // ListPilot-made drafts that are on Etsy (shown under 🚀 Launchpad too)
-  const lpCount = (app.ws.listings || []).length
+  // 🚀 Launchpad count = sirf PENDING listings (Etsy par ja chuki hat jati hain)
+  const lpCount = (app.ws.listings || []).filter((L) => !L.etsy?.listingId).length
 
   // sidebar row helpers
   // Status click: sirf status badalta hai — checked boxes waise hi lage rehte hain

@@ -38,15 +38,29 @@ export default function Listings({ onOpenEtsyListing }) {
     if (L) return <ListingWizard L={L} onBack={() => setOpenId(null)} onOpenEtsyListing={onOpenEtsyListing} />
   }
 
+  // Etsy par ja chuki (draft ya publish) listings yahan NAHI dikhtin —
+  // kaam mukammal, ab wo Etsy Store (Draft/Active status) me milti hain.
+  const pending = app.ws.listings.filter((L) => !L.etsy?.listingId)
+  const done = app.ws.listings.filter((L) => !!L.etsy?.listingId)
+
   return (
     <>
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>🧾 Listings <span className="chip">{app.ws.listings.length}</span></h3>
+        <h3 style={{ marginTop: 0 }}>🧾 Listings <span className="chip">{pending.length}</span></h3>
         <p className="muted">Ek listing = designs + mockups ka combo → generated photos + SEO.</p>
         <button className="btn" onClick={create}>＋ New listing</button>
+        {done.length > 0 && (
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            ✅ {done.length} listing(s) Etsy par ja chuki hain (Draft/Active status me milengi) — yahan se hat gayin.{' '}
+            <a className="lnk" style={{ cursor: 'pointer' }}
+              onClick={() => { if (confirm(`${done.length} mukammal record(s) local list se saaf kar dein? (Etsy par listings ko kuch nahi hota)`)) done.forEach((L) => app.delListing(L.id)) }}>
+              🗑 record saaf karein
+            </a>
+          </p>
+        )}
       </div>
       <div className="grid">
-        {app.ws.listings.map((L) => (
+        {pending.map((L) => (
           <div key={L.id} className="card">
             <b className="ellip">{L.name}</b>
             <div style={{ display: 'flex', gap: 5, margin: '8px 0', flexWrap: 'wrap' }}>
@@ -62,7 +76,7 @@ export default function Listings({ onOpenEtsyListing }) {
           </div>
         ))}
       </div>
-      {!app.ws.listings.length && <Empty>Abhi koi listing nahi.</Empty>}
+      {!pending.length && <Empty>Abhi koi pending listing nahi.</Empty>}
     </>
   )
 }
@@ -254,40 +268,45 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         </div>
       </div>
 
-      {/* STEP 1: pick designs (each card shows its Design # chip) */}
+      {/* STEP 1: pick designs — chhote tiles (Sets page jaise), click = select */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>1 · Designs <span className="chip">{L.designIds.length} selected</span></h3>
-        <div className="grid">
+        <div className="vphotos">
           {app.ws.designs.map((d) => (
-            <div key={d.id} className={'card item-card pick' + (L.designIds.includes(d.id) ? ' sel' : '')} onClick={() => togDesign(d.id)}>
-              <div className="thumb" style={{ background: d.variant === 'light-design' ? '#1e293b' : '#f1f3f9' }}>
-                <img src={d.dataUrl} alt={d.name} style={{ objectFit: 'contain' }} />
-              </div>
-              <span className="chip">{dnumLabel(desDnum(d))}</span>
-              <b className="ellip">{d.name}</b>
-            </div>
+            <span key={d.id} style={{ width: 106, textAlign: 'center', cursor: 'pointer' }} title={d.name} onClick={() => togDesign(d.id)}>
+              <img src={d.dataUrl} alt=""
+                className={'vphoto' + (L.designIds.includes(d.id) ? ' sel' : '')}
+                style={{ width: 106, height: 106, objectFit: 'contain', background: d.variant === 'light-design' ? '#1e293b' : '#f1f3f9' }} />
+              <span className="ellip muted" style={{ display: 'block', fontSize: 10.5 }}>{dnumLabel(desDnum(d))} · {d.name}</span>
+            </span>
           ))}
         </div>
         {!app.ws.designs.length && <Empty>Pehle Designs screen par designs upload karein.</Empty>}
       </div>
 
-      {/* STEP 2: pick mockups — set buttons toggle whole groups */}
+      {/* STEP 2: pick mockups — set chip = POORA set select/deselect;
+          neeche chhote tiles par click = single mockup apni marzi se */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>2 · Mockups <span className="chip">{L.mockupIds.length} selected</span></h3>
         {app.ws.sets.length > 0 && (
           <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap' }}>
-            {app.ws.sets.map((s) => (
-              <button key={s.id} className="chip clickable" onClick={() => togSet(s.id)}>🗂️ {s.name} (toggle all)</button>
-            ))}
+            {app.ws.sets.map((s) => {
+              const ids = app.ws.mockups.filter((m) => (m.setIds || []).includes(s.id)).map((m) => m.id)
+              const allOn = ids.length > 0 && ids.every((id) => L.mockupIds.includes(id))
+              return (
+                <button key={s.id} className={'chip clickable' + (allOn ? ' on' : '')} title={allOn ? 'Poora set hatao' : 'Poora set select karo'}
+                  onClick={() => togSet(s.id)}>🗂️ {s.name} ({ids.length}){allOn ? ' ✓' : ''}</button>
+              )
+            })}
           </div>
         )}
-        <div className="grid">
+        <div className="vphotos">
           {app.ws.mockups.map((m) => (
-            <div key={m.id} className={'card item-card pick' + (L.mockupIds.includes(m.id) ? ' sel' : '')} onClick={() => togMockup(m.id)}>
-              <div className="thumb"><img src={m.dataUrl} alt={m.name} /></div>
-              <b className="ellip">{m.name}</b>
-              <span className="chip">{(m.boxes || []).length} boxes</span>
-            </div>
+            <span key={m.id} style={{ width: 106, textAlign: 'center', cursor: 'pointer' }} title={`${m.name} — ${(m.boxes || []).length} boxes`} onClick={() => togMockup(m.id)}>
+              <img src={m.dataUrl} alt="" className={'vphoto' + (L.mockupIds.includes(m.id) ? ' sel' : '')}
+                style={{ width: 106, height: 106 }} />
+              <span className="ellip muted" style={{ display: 'block', fontSize: 10.5 }}>{m.name}</span>
+            </span>
           ))}
         </div>
         {!app.ws.mockups.length && <Empty>Pehle Mockups screen par photos upload karein.</Empty>}

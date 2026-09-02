@@ -1771,6 +1771,95 @@ function InventoryEditor({ storeId, listingId, currency, mode = 'full', onCount,
  * - aakhir me EK hi Upload box — jab tak 20 puri na hon
  */
 const MAX_PHOTOS = 20
+/**
+ * ThumbAdjust — Etsy jaisa "Adjust thumbnail": photo #1 par 4:3 crop frame,
+ * zoom + drag se set karein. Apply par WOHI crop photo #1 ki jagah Etsy par
+ * chadh jata hai (Etsy ka thumbnail photo #1 se banta hai, is liye Etsy par
+ * bilkul yehi thumbnail nazar aata hai).
+ */
+function ThumbAdjust({ src, onApply, onCancel }) {
+  const [img, setImg] = useState(null)
+  const [z, setZ] = useState(1)                       // zoom 1..3
+  const [pos, setPos] = useState({ x: 0.5, y: 0.5 })  // crop ka center (image fraction)
+  const cvRef = React.useRef(null)
+  const dragRef = React.useRef(null)
+  const AR = 4 / 3   // Etsy listing thumbnail ratio
+
+  useEffect(() => { const im = new Image(); im.onload = () => setImg(im); im.src = src }, [src])
+
+  // crop ka source-rect nikalo (image pixels me)
+  const rect = React.useCallback(() => {
+    if (!img) return null
+    let sw = Math.min(img.naturalWidth, img.naturalHeight * AR) / z
+    let sh = sw / AR
+    let sx = pos.x * img.naturalWidth - sw / 2
+    let sy = pos.y * img.naturalHeight - sh / 2
+    sx = Math.max(0, Math.min(img.naturalWidth - sw, sx))
+    sy = Math.max(0, Math.min(img.naturalHeight - sh, sy))
+    return { sx, sy, sw, sh }
+  }, [img, z, pos])
+
+  useEffect(() => {
+    const cv = cvRef.current, r = rect()
+    if (!cv || !img || !r) return
+    cv.width = 480; cv.height = 360
+    const ctx = cv.getContext('2d')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.fillStyle = '#eee'; ctx.fillRect(0, 0, 480, 360)
+    ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, 480, 360)
+  }, [img, z, pos, rect])
+
+  const onDown = (e) => { dragRef.current = { x: e.clientX, y: e.clientY, pos: { ...pos } } }
+  const onMove = (e) => {
+    const d = dragRef.current, r = rect()
+    if (!d || !r || !img) return
+    const cv = cvRef.current
+    setPos({
+      x: Math.max(0, Math.min(1, d.pos.x - ((e.clientX - d.x) / cv.getBoundingClientRect().width) * (r.sw / img.naturalWidth))),
+      y: Math.max(0, Math.min(1, d.pos.y - ((e.clientY - d.y) / cv.getBoundingClientRect().height) * (r.sh / img.naturalHeight))),
+    })
+  }
+  const onUp = () => { dragRef.current = null }
+
+  const apply = () => {
+    const r = rect()
+    if (!img || !r) return
+    const out = document.createElement('canvas')
+    out.width = 2000; out.height = 1500   // 4:3, Etsy ke recommended size ke qareeb
+    const ctx = out.getContext('2d')
+    ctx.imageSmoothingQuality = 'high'
+    ctx.drawImage(img, r.sx, r.sy, r.sw, r.sh, 0, 0, out.width, out.height)
+    onApply(out.toDataURL('image/jpeg', 0.92))
+  }
+
+  return (
+    <div className="modal-overlay" onMouseUp={onUp} onMouseMove={onMove}>
+      <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="topbar" style={{ marginBottom: 8 }}>
+          <h2 style={{ margin: 0, fontSize: 16 }}>⭐ Adjust thumbnail</h2>
+          <button className="btn sm ghost" onClick={onCancel}>✕</button>
+        </div>
+        <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
+          Etsy ka thumbnail <b>photo #1</b> se banta hai (4:3). Photo ko pakar kar sarkayein, neeche zoom karein —
+          Apply par photo #1 isi crop ke sath replace ho jayegi, to Etsy par bilkul yehi thumbnail jayega.
+        </p>
+        {!img && <p className="muted">⏳ photo load ho rahi hai…</p>}
+        <canvas ref={cvRef} onMouseDown={onDown}
+          style={{ width: '100%', maxWidth: 480, borderRadius: 10, border: '1px solid var(--line)', cursor: 'grab', display: 'block' }} />
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginTop: 10, maxWidth: 480 }}>
+          <span className="muted" style={{ fontSize: 12 }}>Zoom</span>
+          <input type="range" min="1" max="3" step="0.01" value={z} onChange={(e) => setZ(+e.target.value)} style={{ flex: 1 }} />
+          <span className="muted" style={{ fontSize: 12 }}>{z.toFixed(2)}×</span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
+          <button className="btn ghost" onClick={onCancel}>Cancel</button>
+          <button className="btn" onClick={apply}>✓ Apply (photo #1 replace)</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function PhotosEditor({ storeId, listingId, initial, reg }) {
   const [imgs, setImgs] = useState(initial)   // [{id, url, full, alt}]
   const [busy, setBusy] = useState(false)
@@ -1783,6 +1872,7 @@ function PhotosEditor({ storeId, listingId, initial, reg }) {
   const [altTxt, setAltTxt] = useState('')
   const [editIdx, setEditIdx] = useState(null)  // kaunsi photo editor me khuli hai (index)
   const [editSrc, setEditSrc] = useState(null)  // uski dataURL (editor ke liye)
+  const [thumbSrc, setThumbSrc] = useState(null)  // ⭐ Adjust-thumbnail modal ki source image
   const repRef = React.useRef(null)           // Replace ke liye chhupa file input
   const repIdx = React.useRef(-1)
 
@@ -1883,6 +1973,30 @@ function PhotosEditor({ storeId, listingId, initial, reg }) {
     } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
   }
 
+  // ⭐ Adjust thumbnail: photo #1 kholo, 4:3 crop apply hone par usi jagah replace
+  const openThumb = async () => {
+    if (!imgs.length) return
+    setBusy(true); setMsg(null)
+    try {
+      const im = imgs[0]
+      setThumbSrc(im.url.startsWith('data:') ? im.url : await etsy.imageData(im.full || im.url))
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+  const applyThumb = async (dataUrl) => {
+    setThumbSrc(null)
+    setBusy(true); setMsg('⏳ naya thumbnail (photo #1) Etsy par chadh raha hai…')
+    try {
+      const old = imgs[0]
+      await etsy.delImage(storeId, listingId, old.id)
+      const res = await etsy.addImage(storeId, listingId, dataUrl, 1)
+      const a = imgs.map((x, xi) => (xi === 0 ? { id: res.imageId, url: dataUrl, full: null, alt: old.alt } : x))
+      setImgs(a)
+      await etsy.orderImages(storeId, listingId, a.map((x) => x.id))
+      if (old.alt) await etsy.setAlt(storeId, listingId, res.imageId, old.alt, 1)
+      setMsg('✅ Thumbnail set ho gaya — Etsy par yehi crop nazar aayega')
+    } catch (e) { setMsg('⚠ ' + e.message) } finally { setBusy(false) }
+  }
+
   const saveAlt = async () => {
     const i = imgs.findIndex((x) => x.id === altFor)
     if (i < 0) return
@@ -1896,7 +2010,10 @@ function PhotosEditor({ storeId, listingId, initial, reg }) {
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/{MAX_PHOTOS}</span> {busy && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}</h3>
+      <div className="topbar" style={{ margin: 0 }}>
+        <h3 style={{ marginTop: 0 }}>🖼 Photos <span className="chip">{imgs.length}/{MAX_PHOTOS}</span> {busy && <span className="muted" style={{ fontSize: 12 }}>⏳</span>}</h3>
+        {imgs.length > 0 && <button className="btn sm ghost" disabled={busy} onClick={openThumb}>⭐ Adjust thumbnail</button>}
+      </div>
       <p className="muted" style={{ fontSize: 12 }}>Photo pakar kar kisi bhi jagah chhorein — phir neeche 💾 Save order dabayein, tabhi Etsy par jayega. ⚠ = alt text nahi hai.</p>
       <div className="ph-grid">
         {imgs.map((im, i) => (
@@ -1961,6 +2078,9 @@ function PhotosEditor({ storeId, listingId, initial, reg }) {
       {editIdx !== null && editSrc && (
         <PhotoEdit src={editSrc} onApply={applyEdit} onCancel={() => { setEditIdx(null); setEditSrc(null) }} />
       )}
+
+      {/* ⭐ thumbnail adjust modal (photo #1, 4:3 crop) */}
+      {thumbSrc && <ThumbAdjust src={thumbSrc} onApply={applyThumb} onCancel={() => setThumbSrc(null)} />}
     </div>
   )
 }
