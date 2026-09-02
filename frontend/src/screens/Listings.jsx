@@ -106,6 +106,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         variations: profile.variations || null,
       })
       await set({ etsy: { listingId: r.id, url: r.url, at: Date.now() } })
+      // upload me kuch fail hua ho (photo/video) to chupao mat — user ko batao
+      if (r.imgErrors?.length) alert(`⚠ Draft ban gayi, lekin ${r.imgErrors.length} item upload nahi ho saka:\n` + r.imgErrors.slice(0, 4).join('\n'))
       onOpenEtsyListing && onOpenEtsyListing(r.id)
     } catch (e) { alert('⚠ ' + (e.message || e)) } finally { setDraftBusy(false) }
   }
@@ -150,13 +152,15 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
       seoErr = 'API key nahi mili — Settings (apne naam par click) me Gemini key dalein, phir dobara Create listing dabayein.'
     }
     // --- part 3: MP4 slideshow video (Phase I wala system) ---
+    // error ab chupta NAHI — vidErr me save ho kar step 4 ke neeche dikhta hai
+    let vidErr = null
     try {
       setProg({ label: '🎬 video ban rahi hai…' })
       const vid = await makeSlideshowVideo((r.outputs || []).slice(0, 6).map((o) => o.dataUrl))
-      if (vid) await set({ video: vid })
-    } catch {}
+      await set({ video: vid })
+    } catch (e) { vidErr = String(e.message || e) }
 
-    await set({ seoErr })
+    await set({ seoErr, vidErr })
     setProg(null)
   }
 
@@ -238,6 +242,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
           </p>
         )}
         {L.seoErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ SEO: {L.seoErr}</p>}
+        {L.vidErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ Video nahi bani: {L.vidErr}</p>}
+        {L.video && <p className="muted" style={{ color: 'var(--ok, #16a34a)', marginTop: 8 }}>🎬 Video tayar hai — draft ke sath Etsy par chadhegi.</p>}
       </div>
 
       {/* Etsy SEO fields — filled automatically by Create listing; copy into Etsy */}
