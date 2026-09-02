@@ -97,7 +97,7 @@ async function oaiCall(provider, key, sys, userText, images) {
   const imgs = provider === 'openai' ? images.slice(0, 1) : images
   const content = [
     { type: 'text', text: userText + (provider === 'openai' ? '\nNote: only the FIRST artwork image is attached — analyze it fully (read all lettering).' : '') },
-    ...imgs.map((b) => ({ type: 'image_url', image_url: { url: 'data:image/png;base64,' + b, ...(provider === 'openai' ? { detail: 'low' } : {}) } })),
+    ...imgs.map((b) => ({ type: 'image_url', image_url: { url: 'data:image/jpeg;base64,' + b, ...(provider === 'openai' ? { detail: 'low' } : {}) } })),
   ]
   let last
   for (const model of (OAI_MODELS[provider] || OAI_MODELS.openai)) {
@@ -123,10 +123,69 @@ async function oaiCall(provider, key, sys, userText, images) {
   throw last
 }
 
-// POST /api/seo/generate { images: [base64...], category, keywords, apiKey, provider }
+// lambe tags DROP nahi hote — word-boundary par 20 tak tarashe jate hain
+const trimTags = (arr) => [...new Set((arr || []).map((x) => {
+  let t = String(x).trim().toLowerCase()
+  if (t.length > 20) { t = t.slice(0, 20); const c = t.lastIndexOf(' '); if (c > 9) t = t.slice(0, c); t = t.trim() }
+  return t
+}).filter(Boolean))].slice(0, 13)
+
+// POST /api/seo/generate { images: [base64...], category, keywords, apiKey, provider,
+//   only?: 'title'|'tags'|'description', vision?: {subject,theme,text}, prev?: ... }
+// `only` = REGENERATE mode: sirf wo EK field dobara banti hai, aur TEXT-ONLY
+// call hoti hai (koi image nahi — pehli generate ki `vision` info dobara use
+// hoti hai) — is liye tokens na-honay ke barabar lagte hain (TOKEN-SAVER).
 router.post('/generate', async (req, res) => {
   try {
-    const { images = [], category = 'Canvas', keywords = '', apiKey = '', provider = 'gemini' } = req.body
+    const { images = [], category = 'Canvas', keywords = '', apiKey = '', provider = 'gemini', only = '', vision = null, prev = null } = req.body
+
+    if (only === 'title' || only === 'tags' || only === 'description') {
+      const v = vision || {}
+      const rules = {
+        title: 'Return strictly valid JSON {"title":"..."}. title MUST be 130-140 characters long — a HARD requirement, never short; 4-6 keyword-rich buyer search phrases separated by commas (most searched first), combining design subject/theme + product type + audience/occasion/gift angles.',
+        tags: 'Return strictly valid JSON {"tags":["..."]}. EXACTLY 13 items, each a MULTI-WORD long-tail phrase 12-20 characters (2-3 words) real Etsy buyers search — never single generic words, no duplicates.',
+        description: 'Return strictly valid JSON {"description":"..."}. 270-300 characters — use the FULL 300 budget, never less than 270 — about THE DESIGN itself (what it shows, quoted text, style/colors/mood) on the given product, ending with a soft call to action.',
+      }[only]
+      const sys2 = 'You are an Etsy SEO copywriting assistant for print-on-demand products. ' + rules +
+        ' Never use brand names, characters, celebrities or famous slogans. No text outside the JSON.'
+      const userTxt2 =
+        `The design (from an earlier vision analysis): subject="${v.subject || ''}", theme="${v.theme || ''}", lettering on artwork="${v.text || ''}". ` +
+        `Product type: "${category}". Extra keywords: "${keywords}". ` +
+        (prev ? `The previous ${only} was: ${JSON.stringify(prev).slice(0, 700)} — produce a CLEARLY DIFFERENT new one. ` : '') +
+        'Output only the JSON.'
+      let seo = null, lastErr = null
+      for (let round = 0; round < 2 && !seo; round++) {
+        let txt = ''
+        if (provider === 'openai' || provider === 'groq' || provider === 'openrouter') {
+          txt = await oaiCall(provider, apiKey, sys2, userTxt2, [])   // NO images
+        } else {
+          const j = await gemCall({
+            system_instruction: { parts: [{ text: sys2 }] },
+            contents: [{ parts: [{ text: userTxt2 }] }],
+            generationConfig: { maxOutputTokens: 1024, responseMimeType: 'application/json' },
+          }, apiKey)
+          txt = (j.candidates?.[0]?.content?.parts || []).map((p) => p.text || '').join('')
+        }
+        const m = txt.match(/\{[\s\S]*\}/)
+        if (!m) { lastErr = 'no JSON in AI response'; continue }
+        const o = JSON.parse(m[0])
+        if (only === 'tags') {
+          const tags = trimTags(o.tags)
+          if (round === 0 && tags.length < 13) { lastErr = `${tags.length}/13 tags`; continue }
+          seo = { tags }
+        } else if (only === 'title') {
+          const t = String(o.title || '').trim()
+          if (round === 0 && t.length < 110) { lastErr = `title chhota (${t.length})`; continue }
+          seo = { title: t.slice(0, 140) }
+        } else {
+          const d = String(o.description || '').trim()
+          if (round === 0 && d.length < 220) { lastErr = `description chhoti (${d.length})`; continue }
+          seo = { description: d }
+        }
+      }
+      if (!seo) throw new Error(lastErr || `${only} regenerate nahi hua`)
+      return res.json({ ok: true, seo })
+    }
 
     // The "system" prompt defines the exact JSON we want back and the
     // Etsy rules — Phase I v33 wale HARD length rules (chhota SEO qabool nahi).
@@ -143,7 +202,7 @@ router.post('/generate', async (req, res) => {
 
     const userTxt = `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.`
     const parts = [
-      ...images.slice(0, 3).map((b) => ({ inline_data: { mime_type: 'image/png', data: b } })),
+      ...images.slice(0, 3).map((b) => ({ inline_data: { mime_type: 'image/jpeg', data: b } })),
       { text: userTxt },
     ]
     // 2 rounds: agar model chhota SEO de (title/desc/tags adhure) to EK bar dobara
@@ -164,12 +223,7 @@ router.post('/generate', async (req, res) => {
       const m = txt.match(/\{[\s\S]*\}/)
       if (!m) { lastErr = 'no JSON in AI response'; continue }
       const o = JSON.parse(m[0])
-      // lambe tags DROP nahi hote — word-boundary par 20 tak tarashe jate hain
-      o.tags = [...new Set((o.tags || []).map((x) => {
-        let t = String(x).trim().toLowerCase()
-        if (t.length > 20) { t = t.slice(0, 20); const c = t.lastIndexOf(' '); if (c > 9) t = t.slice(0, c); t = t.trim() }
-        return t
-      }).filter(Boolean))].slice(0, 13)
+      o.tags = trimTags(o.tags)
       // alt/alts: Etsy ki 250-char limit par tarasho; alts = design-based variations
       o.alt = String(o.alt || '').trim().slice(0, 250)
       o.alts = (Array.isArray(o.alts) ? o.alts : []).map((s) => String(s).trim().slice(0, 250)).filter(Boolean).slice(0, 10)

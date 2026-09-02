@@ -74,8 +74,64 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const [draftBusy, setDraftBusy] = useState(false)   // Etsy par draft ban rahi hai
   const [editOut, setEditOut] = useState(null)        // ✎ kaunsi output photo editor me khuli hai
   const [boxOut, setBoxOut] = useState(null)          // 📦 kaunse mockup ke boxes dobara edit ho rahe hain
+  const [secs, setSecs] = useState(null)              // shop ke sections (live Etsy se)
+  const [secIn, setSecIn] = useState('')              // ＋New section ka naam
+  const [secBusy, setSecBusy] = useState(false)
+  const [regenBusy, setRegenBusy] = useState(null)    // 'title'|'tags'|'description' regen chal raha
   const profiles = getProfiles()
   const set = (patch) => app.updListing(L.id, patch)
+  const SEC_MAX = 20   // Etsy rule: har shop me zyada se zyada 20 sections
+
+  useEffect(() => {
+    etsy.sections(app.curStoreId).then((r) => setSecs(r.sections)).catch(() => setSecs([]))
+  }, [app.curStoreId])
+
+  const addSection = async () => {
+    const t = secIn.trim()
+    if (!t) return
+    setSecBusy(true)
+    try {
+      const r = await etsy.createSection(app.curStoreId, t)
+      setSecs([...(secs || []), { id: r.id, title: r.title }])
+      await set({ sectionId: String(r.id) })
+      setSecIn('')
+    } catch (e) { alert('⚠ Section nahi bana: ' + (e.message || e)) } finally { setSecBusy(false) }
+  }
+
+  // ⟳ REGENERATE — sirf EK field (title/tags/description) dobara. TEXT-ONLY
+  // call: image dobara nahi jati (pehli generate ki vision info use hoti hai)
+  // — is liye tokens na-honay ke barabar (TOKEN-SAVER barqarar).
+  const regen = async (field) => {
+    if (!getGeminiKey()) return alert('API key nahi mili — Settings me AI key dalein')
+    if (!L.seo) return
+    setRegenBusy(field)
+    try {
+      const r = await genSeo({
+        images: [], only: field,
+        vision: L.seo.vision || null, prev: L.seo[field] || null,
+        category: L.category || '', keywords: L.keywords || '',
+      })
+      await set({ seo: { ...L.seo, ...r.seo } })
+    } catch (e) { alert('⚠ ' + (e.message || e)) } finally { setRegenBusy(null) }
+  }
+
+  // TOKEN-SAVER: design photo AI ko bhejne se pehle 512px JPEG banti hai
+  // (light designs dark background par, warna white-on-white parh nahi ata)
+  const shrink512 = (d) => new Promise((resolve) => {
+    const im = new Image()
+    im.onload = () => {
+      const k = Math.min(1, 512 / Math.max(im.width, im.height))
+      const c = document.createElement('canvas')
+      c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k))
+      const x = c.getContext('2d')
+      x.fillStyle = d.variant === 'light-design' ? '#1e293b' : '#ffffff'
+      x.fillRect(0, 0, c.width, c.height)
+      x.drawImage(im, 0, 0, c.width, c.height)
+      resolve(c.toDataURL('image/jpeg', 0.85).split(',')[1])
+    }
+    im.onerror = () => resolve(null)
+    im.src = d.dataUrl
+  })
 
   // Har photo ka apna ALAG alt text — SIRF design se related (AI ki 8 alt
   // variations photos par bari bari lagti hain). File/mockup names KABHI nahi.
@@ -104,6 +160,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     if (!profile.details?.taxonomyId) return alert('Profile me Category set nahi — 🧩 panel se profile edit karein')
     if (!profile.shipping?.shippingProfileId) return alert('Profile me Shipping profile set nahi — 🧩 panel se profile edit karein')
     if (!L.seo && !window.confirm('🚀 Generate nahi chala — title/tags/description khali honge (edit page par khud likhne padenge). Phir bhi draft banayein?')) return
+    if (!(L.sku || '').trim() && !window.confirm('SKU khali hai (step 4) — bina SKU ke draft banayein? (Edit page par baad me bhi dal sakte hain)')) return
     setDraftBusy(true)
     try {
       // har photo ka apna ALAG, DESIGN-based alt (AI ki alts variations se)
@@ -118,11 +175,12 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         description: fullDesc,
         tags: L.seo?.tags || [],
         materials: profile.materials || [],
-        sku: '',                    // SKU aap edit page par khud dalenge
+        sku: (L.sku || '').trim(),          // step 4 me aapka dala hua SKU
         state: 'draft',             // hidden + FREE — fee sirf Active par
         images: photos.slice(0, 20).map((p) => ({ dataUrl: p.dataUrl, alt: p.alt })),
         video: L.video || null,
-        details: profile.details || {},
+        // section profile me store nahi hota (aapka rule) — step 4 se yahan lagta hai
+        details: { ...(profile.details || {}), sectionId: L.sectionId || undefined },
         shipping: profile.shipping || {},
         priceQty: { price: Number(profile.priceQty?.price) || 1, quantity: Number(profile.priceQty?.quantity) || 999 },
         variations: profile.variations || null,
@@ -166,7 +224,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     if (getGeminiKey()) {
       setProg({ label: '✨ SEO ban raha hai…' })
       try {
-        const images = designs.slice(0, 3).map((d) => d.dataUrl.split(',')[1])
+        // TOKEN-SAVER: 512px JPEG versions bhejte hain, full-size kabhi nahi
+        const images = (await Promise.all(designs.slice(0, 3).map(shrink512))).filter(Boolean)
         const res = await genSeo({ images, category: L.category || 'Canvas Wall Art', keywords: L.keywords || '' })
         await set({ seo: res.seo })
       } catch (e) { seoErr = String(e.message || e) }
@@ -192,10 +251,6 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         <div className="topbar" style={{ marginBottom: 6 }}>
           <input value={L.name} onChange={(e) => set({ name: e.target.value })} style={{ fontWeight: 700, fontSize: 16, minWidth: 240 }} />
           <button className="btn sm ghost" onClick={onBack}>← Back</button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input placeholder="Title hint (e.g. Tshirt, Sweatshirt…)" value={L.category} onChange={(e) => set({ category: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
-          <input placeholder="Tag hint (optional keywords)" value={L.keywords} onChange={(e) => set({ keywords: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
         </div>
       </div>
 
@@ -249,9 +304,46 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         {!profiles.length && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Abhi koi profile nahi — kisi Etsy listing ke edit page par ⊞ Save as Profile se banayein.</p>}
       </div>
 
-      {/* STEP 4: the one big button — photos + SEO + video together */}
+      {/* STEP 4: Listing setup — Section + SKU + hints (profile me nahi hote,
+          har listing par alag) */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>4 · Generate</h3>
+        <h3 style={{ marginTop: 0 }}>4 · Listing setup <span className="chip">section · SKU · hints</span></h3>
+        <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shop section <span className="opt">Optional</span></label>
+            <select value={L.sectionId || ''} onChange={(e) => set({ sectionId: e.target.value })} style={{ minWidth: 200 }}>
+              <option value="">— koi section nahi —</option>
+              {(secs || []).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
+            </select>
+            {secs === null && <span className="muted" style={{ fontSize: 11, display: 'block' }}>⏳ sections…</span>}
+          </span>
+          {secs !== null && secs.length < SEC_MAX && (
+            <span>
+              <label className="muted" style={{ fontSize: 12, display: 'block' }}>＋ Naya section ({secs.length}/{SEC_MAX})</label>
+              <span style={{ display: 'flex', gap: 6 }}>
+                <input placeholder="section ka naam" value={secIn} maxLength={24} onChange={(e) => setSecIn(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && addSection()} style={{ width: 180 }} />
+                <button className="btn sm ghost" disabled={secBusy || !secIn.trim()} onClick={addSection}>{secBusy ? '⏳' : '＋ Add'}</button>
+              </span>
+            </span>
+          )}
+          {secs !== null && secs.length >= SEC_MAX && (
+            <span className="chip">Etsy limit: {SEC_MAX}/{SEC_MAX} sections — naya nahi ban sakta</span>
+          )}
+          <span>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU (aap khud dalte hain)</label>
+            <input placeholder="e.g. NCT-307" value={L.sku || ''} onChange={(e) => set({ sku: e.target.value })} style={{ width: 170 }} />
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <input placeholder="Title hint (e.g. Tshirt, Sweatshirt…)" value={L.category} onChange={(e) => set({ category: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+          <input placeholder="Tag hint (optional keywords)" value={L.keywords} onChange={(e) => set({ keywords: e.target.value })} style={{ flex: 1, minWidth: 200 }} />
+        </div>
+      </div>
+
+      {/* STEP 5: the one big button — photos + SEO + video together */}
+      <div className="card">
+        <h3 style={{ marginTop: 0 }}>5 · Generate</h3>
         <p className="muted">Ye button sab karega: {L.mockupIds.length} product photos + AI SEO (title, tags, 300-char description, ALT) + MP4 video.</p>
         {prog ? (
           <p className="muted">⏳ {prog.label}</p>
@@ -272,9 +364,10 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
       {L.seo && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>✨ Etsy SEO <span className="chip ok">ready</span></h3>
-          <SeoField label="Title" value={L.seo.title} />
-          <SeoField label="Tags" value={(L.seo.tags || []).join(', ')} />
-          <SeoField label="Description" value={L.seo.description} multi />
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>⟳ = SIRF wo field dobara banti hai (text-only call — image dobara nahi jati, tokens na-honay ke barabar).</p>
+          <SeoField label="Title" value={L.seo.title} onRegen={() => regen('title')} regenBusy={regenBusy === 'title'} />
+          <SeoField label="Tags" value={(L.seo.tags || []).join(', ')} onRegen={() => regen('tags')} regenBusy={regenBusy === 'tags'} />
+          <SeoField label="Description" value={L.seo.description} multi onRegen={() => regen('description')} regenBusy={regenBusy === 'description'} />
           <SeoField label="ALT text" value={L.seo.alt} multi />
         </div>
       )}
@@ -284,7 +377,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
           ⇧ Publish (Active ya Draft rehne do). Fee sirf Active par ($0.20). */}
       {L.outputs?.length > 0 && (
         <div className="card">
-          <h3 style={{ marginTop: 0 }}>5 · Final check & Publish</h3>
+          <h3 style={{ marginTop: 0 }}>6 · Final check & Publish</h3>
           {L.etsy?.listingId ? (
             <>
               <p className="muted">Ye listing Etsy par ban chuki hai — wohi poora edit page kholein (photos, video, title, tags, details, variations, personalization, shipping — sab wahan).</p>
@@ -364,14 +457,21 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   )
 }
 
-/** One labeled read-only SEO field with a Copy button (input or textarea). */
-function SeoField({ label, value, multi }) {
+/** One labeled read-only SEO field with Copy (+ optional ⟳ regenerate) buttons. */
+function SeoField({ label, value, multi, onRegen, regenBusy }) {
   const copy = () => navigator.clipboard.writeText(value || '')
   return (
     <div style={{ marginBottom: 10 }}>
       <div className="topbar" style={{ margin: '0 0 4px' }}>
         <span className="muted" style={{ fontWeight: 600 }}>{label}</span>
-        <button className="btn sm ghost" onClick={copy}>📋 Copy</button>
+        <span style={{ display: 'flex', gap: 6 }}>
+          {onRegen && (
+            <button className="btn sm ghost" disabled={regenBusy} title={`Sirf ${label} dobara banao`} onClick={onRegen}>
+              {regenBusy ? '⏳' : '⟳'}
+            </button>
+          )}
+          <button className="btn sm ghost" onClick={copy}>📋 Copy</button>
+        </span>
       </div>
       {multi ? (
         <textarea readOnly value={value || ''} rows={3} style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 8, fontSize: 13 }} />
