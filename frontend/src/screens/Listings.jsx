@@ -77,12 +77,22 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const profiles = getProfiles()
   const set = (patch) => app.updListing(L.id, patch)
 
-  // Har photo ka apna ALAG alt text — AI wala base + us photo ka naam
-  const prettyName = (s) => String(s || '').replace(/\.[^.]+$/, '').replace(/[._-]+/g, ' ').trim()
-  const altFor = (name, kind) => {
-    const base = (L.seo?.alt || L.seo?.title || L.name || '').trim()
-    const suffix = ' — ' + (kind ? kind + ': ' : '') + (prettyName(name) || 'photo')
-    return (base.slice(0, Math.max(0, 240 - suffix.length)) + suffix).slice(0, 250)
+  // Har photo ka apna ALAG alt text — SIRF design se related (AI ki 8 alt
+  // variations photos par bari bari lagti hain). File/mockup names KABHI nahi.
+  const altFor = (i, kind) => {
+    if (kind === 'size') {
+      const t = (L.seo?.title || '').split(',')[0].trim() || 'this design'
+      return `Size chart for ${t}`.slice(0, 250)
+    }
+    const alts = (L.seo?.alts || []).filter(Boolean)
+    let base = alts.length ? alts[i % alts.length] : (L.seo?.alt || L.seo?.title || '')
+    // agar variations kam hon aur repeat ho raha ho to design-tag jor kar unique banao
+    const tags = L.seo?.tags || []
+    if (alts.length && i >= alts.length && tags.length) {
+      const t = tags[i % tags.length]
+      base = (base.slice(0, Math.max(0, 246 - t.length)) + ' — ' + t)
+    }
+    return String(base).trim().slice(0, 250)
   }
 
   // 5 · FINAL: Etsy par FREE hidden DRAFT banao, phir WOHI asli edit page
@@ -96,11 +106,11 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     if (!L.seo && !window.confirm('🚀 Generate nahi chala — title/tags/description khali honge (edit page par khud likhne padenge). Phir bhi draft banayein?')) return
     setDraftBusy(true)
     try {
-      // har photo ka apna ALAG alt (AI base + photo ka naam)
+      // har photo ka apna ALAG, DESIGN-based alt (AI ki alts variations se)
       const photos = [
-        ...(L.outputs || []).map((o) => ({ dataUrl: o.dataUrl, alt: altFor(o.name) })),
+        ...(L.outputs || []).map((o, i) => ({ dataUrl: o.dataUrl, alt: altFor(i) })),
         // profile ki size-chart photos — mockups ke BAAD
-        ...((profile.photos) || []).map((x) => ({ dataUrl: x.dataUrl, alt: altFor(x.name, 'size chart') })),
+        ...((profile.photos) || []).map((x, i) => ({ dataUrl: x.dataUrl, alt: altFor(i, 'size') })),
       ]
       const fullDesc = ((L.seo?.description || '').trim() + (profile.desc2 ? '\n\n' + profile.desc2 : '')).trim() || (L.seo?.title || L.name)
       const r = await etsy.createFull(app.curStoreId, {

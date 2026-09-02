@@ -133,11 +133,13 @@ router.post('/generate', async (req, res) => {
     const sys =
       'You are an Etsy SEO copywriting assistant for print-on-demand products. ' +
       'Look at the artwork image(s), READ any lettering word by word, and produce strictly valid JSON: ' +
-      '{"title":"...","tags":["..."],"description":"...","alt":"...","vision":{"subject":"...","theme":"...","text":"..."}}. ' +
+      '{"title":"...","tags":["..."],"description":"...","alt":"...","alts":["..."],"vision":{"subject":"...","theme":"...","text":"..."}}. ' +
       'Rules: title MUST be 130-140 characters long — a HARD requirement, never short; build it as 4-6 keyword-rich buyer search phrases separated by commas (most searched first), combining artwork subject/theme + product type + audience/occasion/gift angles. ' +
       'tags: EXACTLY 13 items, each a MULTI-WORD long-tail phrase 12-20 characters (2-3 words) real Etsy buyers search — never single generic words, no duplicates. ' +
       'description: 270-300 characters — use the FULL 300 budget, never less than 270 — about THE DESIGN itself (what it shows, quoted text, style/colors/mood) on the given product, ending with a soft call to action. ' +
-      'alt: 300-500 chars factual visual description. Never use brand names, characters, celebrities or famous slogans. No text outside the JSON.'
+      'alt: 150-250 chars factual visual description of THE DESIGN (its lettering, style, colors, mood) on the product. ' +
+      'alts: EXACTLY 8 DIFFERENT alt-text variations, each 120-250 chars, ALL describing THE DESIGN from different angles (wording, mood, occasion, audience) — never file names, never placeholder words. ' +
+      'Never use brand names, characters, celebrities or famous slogans. No text outside the JSON.'
 
     const userTxt = `Product type: "${category}". Extra keywords: "${keywords}". Output only the JSON.`
     const parts = [
@@ -168,6 +170,9 @@ router.post('/generate', async (req, res) => {
         if (t.length > 20) { t = t.slice(0, 20); const c = t.lastIndexOf(' '); if (c > 9) t = t.slice(0, c); t = t.trim() }
         return t
       }).filter(Boolean))].slice(0, 13)
+      // alt/alts: Etsy ki 250-char limit par tarasho; alts = design-based variations
+      o.alt = String(o.alt || '').trim().slice(0, 250)
+      o.alts = (Array.isArray(o.alts) ? o.alts : []).map((s) => String(s).trim().slice(0, 250)).filter(Boolean).slice(0, 10)
       const tl = String(o.title || '').length, dl = String(o.description || '').length
       if (round === 0 && (tl < 110 || dl < 220 || o.tags.length < 13)) { lastErr = `SEO adhura (title ${tl}, desc ${dl}, ${o.tags.length}/13 tags)`; continue }
       seo = o
