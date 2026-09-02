@@ -535,7 +535,13 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
     setBusy(true); setMsg('⏳ sab kuch Etsy par ja raha hai…')
     try {
       await saveMainPatch()                                       // title/desc/tags/details/shipping/attributes
-      for (const k of Object.keys(reg.current)) await reg.current[k]()   // photos order / variations / personalization
+      // reg me kuch HELPER functions bhi hain (getInventory/applyProfileInv) —
+      // wo save nahi karte, unhe call karna crash deta tha ("reading 'variations'")
+      const helpers = new Set(['getInventory', 'applyProfileInv'])
+      for (const k of Object.keys(reg.current)) {
+        if (helpers.has(k)) continue
+        await reg.current[k]()   // photos order / variations / personalization
+      }
       if (changing) await etsy.setState(storeId, detail.id, target)
       setMsg(changing && target === 'active' ? '🚀 Save + listing LIVE ho gayi!' : changing ? '📝 Save + listing draft ho gayi' : '✅ Sab kuch Etsy par save ho gaya')
       setTimeout(onDone, 900)

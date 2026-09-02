@@ -14,7 +14,9 @@ import React, { useState, useEffect } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { Empty, confirmDel } from '../components/ui.jsx'
 import { dnumLabel } from '../store/helpers.js'
-import { desDnum, runGeneration } from '../store/compose.js'
+import { desDnum, runGeneration, composeMockup } from '../store/compose.js'
+import PhotoEdit from './PhotoEdit.jsx'
+import BoxEditor from './BoxEditor.jsx'
 import { uid } from '../store/helpers.js'
 import { genSeo, getGeminiKey, etsy } from '../api.js'
 import { getProfiles } from '../store/profiles.js'
@@ -70,8 +72,18 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const app = useApp()
   const [prog, setProg] = useState(null)   // generation progress {i, n, name}
   const [draftBusy, setDraftBusy] = useState(false)   // Etsy par draft ban rahi hai
+  const [editOut, setEditOut] = useState(null)        // ✎ kaunsi output photo editor me khuli hai
+  const [boxOut, setBoxOut] = useState(null)          // 📦 kaunse mockup ke boxes dobara edit ho rahe hain
   const profiles = getProfiles()
   const set = (patch) => app.updListing(L.id, patch)
+
+  // Har photo ka apna ALAG alt text — AI wala base + us photo ka naam
+  const prettyName = (s) => String(s || '').replace(/\.[^.]+$/, '').replace(/[._-]+/g, ' ').trim()
+  const altFor = (name, kind) => {
+    const base = (L.seo?.alt || L.seo?.title || L.name || '').trim()
+    const suffix = ' — ' + (kind ? kind + ': ' : '') + (prettyName(name) || 'photo')
+    return (base.slice(0, Math.max(0, 240 - suffix.length)) + suffix).slice(0, 250)
+  }
 
   // 5 · FINAL: Etsy par FREE hidden DRAFT banao, phir WOHI asli edit page
   // kholo jo active listings ka hota hai (100% same — personalization,
@@ -84,12 +96,12 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     if (!L.seo && !window.confirm('🚀 Generate nahi chala — title/tags/description khali honge (edit page par khud likhne padenge). Phir bhi draft banayein?')) return
     setDraftBusy(true)
     try {
+      // har photo ka apna ALAG alt (AI base + photo ka naam)
       const photos = [
-        ...(L.outputs || []).map((o) => ({ dataUrl: o.dataUrl })),
+        ...(L.outputs || []).map((o) => ({ dataUrl: o.dataUrl, alt: altFor(o.name) })),
         // profile ki size-chart photos — mockups ke BAAD
-        ...((profile.photos) || []).map((x) => ({ dataUrl: x.dataUrl })),
+        ...((profile.photos) || []).map((x) => ({ dataUrl: x.dataUrl, alt: altFor(x.name, 'size chart') })),
       ]
-      const alt = L.seo?.alt || ''
       const fullDesc = ((L.seo?.description || '').trim() + (profile.desc2 ? '\n\n' + profile.desc2 : '')).trim() || (L.seo?.title || L.name)
       const r = await etsy.createFull(app.curStoreId, {
         title: L.seo?.title || L.name,
@@ -98,7 +110,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         materials: profile.materials || [],
         sku: '',                    // SKU aap edit page par khud dalenge
         state: 'draft',             // hidden + FREE — fee sirf Active par
-        images: photos.slice(0, 20).map((p) => ({ dataUrl: p.dataUrl, alt })),
+        images: photos.slice(0, 20).map((p) => ({ dataUrl: p.dataUrl, alt: p.alt })),
         video: L.video || null,
         details: profile.details || {},
         shipping: profile.shipping || {},
@@ -289,16 +301,54 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
       {L.outputs?.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>📦 Outputs <span className="chip ok">{L.outputs.length}</span></h3>
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
+            Draft banane se pehle theek karein: <b>✎ Edit</b> = photo editor (adjust/transform) ·
+            <b> 📦 Boxes</b> = design ki jagah/size/rotation badal kar SIRF ye photo dobara banti hai.
+          </p>
           <div className="grid">
-            {L.outputs.map((o) => (
-              <div key={o.id} className="card item-card">
-                <div className="thumb"><img src={o.dataUrl} alt={o.name} /></div>
-                <b className="ellip">{o.name}</b>
-                <a className="btn sm ghost" style={{ marginTop: 6, textAlign: 'center', textDecoration: 'none' }} href={o.dataUrl} download={o.name + '.jpg'}>⬇ PNG</a>
-              </div>
-            ))}
+            {L.outputs.map((o) => {
+              const mockId = String(o.id).replace(/-out$/, '')
+              const hasMock = app.ws.mockups.some((m) => m.id === mockId)
+              return (
+                <div key={o.id} className="card item-card">
+                  <div className="thumb"><img src={o.dataUrl} alt={o.name} /></div>
+                  <b className="ellip">{o.name}</b>
+                  <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
+                    <button className="btn sm ghost" title="Photo editor (adjust/transform)" onClick={() => setEditOut(o.id)}>✎ Edit</button>
+                    {hasMock && <button className="btn sm ghost" title="Design ki jagah badal kar dobara banao" onClick={() => setBoxOut(mockId)}>📦 Boxes</button>}
+                    <a className="btn sm ghost" style={{ textAlign: 'center', textDecoration: 'none' }} href={o.dataUrl} download={o.name + '.jpg'}>⬇</a>
+                  </div>
+                </div>
+              )
+            })}
           </div>
         </div>
+      )}
+
+      {/* ✎ — Etsy-style photo editor: output ki photo par halki pulki tabdeeli */}
+      {editOut && (
+        <PhotoEdit
+          src={(L.outputs || []).find((o) => o.id === editOut)?.dataUrl}
+          onApply={(url) => { set({ outputs: L.outputs.map((o) => (o.id === editOut ? { ...o, dataUrl: url } : o)) }); setEditOut(null) }}
+          onCancel={() => setEditOut(null)}
+        />
+      )}
+
+      {/* 📦 — boxes dobara set karo; band hote hi SIRF is mockup ki photo naye
+          boxes se dobara ban kar output me lag jati hai */}
+      {boxOut && (
+        <BoxEditor mockupId={boxOut} onClose={async () => {
+          const mid = boxOut
+          setBoxOut(null)
+          const m = app.ws.mockups.find((x) => x.id === mid)
+          const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
+          if (!m || !designs.length) return
+          try {
+            setProg({ label: `🔁 ${m.name} dobara ban rahi hai…` })
+            const r = await composeMockup(m, designs, {})
+            if (r.dataUrl) await set({ outputs: L.outputs.map((o) => (o.id === m.id + '-out' ? { ...o, dataUrl: r.dataUrl } : o)) })
+          } finally { setProg(null) }
+        }} />
       )}
     </>
   )
