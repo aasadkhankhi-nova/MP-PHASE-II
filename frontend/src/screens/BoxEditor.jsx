@@ -18,6 +18,8 @@ import { loadImg, uid, PLACEMENTS } from '../store/helpers.js'
 import { dnumLabel, DNUMS } from '../store/helpers.js'
 
 const HANDLE = 9  // px size of the resize handle
+const STEM = 26   // rotate handle: line length from box top-center up to the dot
+const DOT = 6     // rotate handle: dot radius
 
 export default function BoxEditor({ mockupId, onClose }) {
   const app = useApp()
@@ -73,15 +75,23 @@ export default function BoxEditor({ mockupId, onClose }) {
       ctx.setLineDash([])
       ctx.fillStyle = 'rgba(79,109,245,.10)'
       ctx.fillRect(-w / 2, -h / 2, w, h)
+      if (b.id === sel) {
+        // resize handle (bottom-right corner) — box ke saath ghumta hai
+        ctx.fillStyle = '#4f6df5'
+        ctx.fillRect(w / 2 - HANDLE / 2, h / 2 - HANDLE / 2, HANDLE, HANDLE)
+        // ROTATE handle: top-center se upar ek line + pakadne wala dot (Canva jaisa)
+        ctx.strokeStyle = '#4f6df5'
+        ctx.lineWidth = 1.5
+        ctx.beginPath(); ctx.moveTo(0, -h / 2); ctx.lineTo(0, -h / 2 - STEM); ctx.stroke()
+        ctx.beginPath(); ctx.arc(0, -h / 2 - STEM, DOT, 0, Math.PI * 2)
+        ctx.fillStyle = '#fff'; ctx.fill()
+        ctx.lineWidth = 2.2; ctx.stroke()
+      }
       ctx.restore()
       // small label above the box: placement · area · design#
       ctx.fillStyle = '#4f6df5'
       ctx.font = 'bold 12px sans-serif'
       ctx.fillText(`${b.name || '?'} · ${b.tag || '?'}${b.dnum && b.dnum !== 'any' ? ' · ' + dnumLabel(b.dnum) : ''}`, x + 4, y - 5)
-      if (b.id === sel) {
-        ctx.fillStyle = '#4f6df5'
-        ctx.fillRect(x + w - HANDLE / 2, y + h - HANDLE / 2, HANDLE, HANDLE)
-      }
     }
   }, [boxes, sel])
 
@@ -94,23 +104,39 @@ export default function BoxEditor({ mockupId, onClose }) {
     return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]
   }
 
-  // Decide what the mouse press starts: resize / move / create-new.
+  // Mouse point ko box ke ROTATED local frame me le jao (center = 0,0).
+  // Isse rotate/resize/move ka hit-test ghume hue box par bhi sahi rehta hai.
+  const toLocal = (b, cv, px, py) => {
+    const cx = (b.x + b.w / 2) * cv.width, cy = (b.y + b.h / 2) * cv.height
+    const a = -(((b.rot || 0) * Math.PI) / 180)
+    const dx = px - cx, dy = py - cy
+    return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)]
+  }
+
+  // Decide what the mouse press starts: rotate / resize / move / create-new.
   const onDown = (e) => {
     const cv = cvRef.current
     const [px, py] = pos(e)
     const s = boxes.find((b) => b.id === sel)
-    if (s) {  // near the selected box's bottom-right handle? -> resize
-      const hx = (s.x + s.w) * cv.width, hy = (s.y + s.h) * cv.height
-      if (Math.abs(px - hx) < HANDLE + 3 && Math.abs(py - hy) < HANDLE + 3) {
+    if (s) {
+      const w = s.w * cv.width, h = s.h * cv.height
+      const [lx, ly] = toLocal(s, cv, px, py)
+      // upar wala ROTATE dot pakda? -> rotate
+      if (Math.hypot(lx, ly - (-h / 2 - STEM)) < DOT + 6) {
+        snap(); dragRef.current = { mode: 'rot', id: s.id }; return
+      }
+      // bottom-right handle? -> resize
+      if (Math.abs(lx - w / 2) < HANDLE + 3 && Math.abs(ly - h / 2) < HANDLE + 3) {
         snap(); dragRef.current = { mode: 'resize', id: s.id }; return
       }
     }
     for (let i = boxes.length - 1; i >= 0; i--) {  // inside a box? -> move (topmost wins)
       const b = boxes[i]
-      const x = b.x * cv.width, y = b.y * cv.height, w = b.w * cv.width, h = b.h * cv.height
-      if (px >= x && px <= x + w && py >= y && py <= y + h) {
+      const w = b.w * cv.width, h = b.h * cv.height
+      const [lx, ly] = toLocal(b, cv, px, py)
+      if (Math.abs(lx) <= w / 2 && Math.abs(ly) <= h / 2) {
         setSel(b.id); snap()
-        dragRef.current = { mode: 'move', id: b.id, dx: px - x, dy: py - y }
+        dragRef.current = { mode: 'move', id: b.id, dx: px - b.x * cv.width, dy: py - b.y * cv.height }
         return
       }
     }
@@ -131,6 +157,14 @@ export default function BoxEditor({ mockupId, onClose }) {
       if (d.mode === 'move') {
         // clamp so the box stays inside the photo
         return { ...b, x: Math.max(0, Math.min(1 - b.w, (px - d.dx) / cv.width)), y: Math.max(0, Math.min(1 - b.h, (py - d.dy) / cv.height)) }
+      }
+      if (d.mode === 'rot') {
+        // dot center ke UPAR hota hai, is liye +90° — seedha (0°) ke paas aa jaye to snap
+        const cx = (b.x + b.w / 2) * cv.width, cy = (b.y + b.h / 2) * cv.height
+        let deg = (Math.atan2(py - cy, px - cx) * 180) / Math.PI + 90
+        if (deg > 180) deg -= 360
+        if (Math.abs(deg) < 3) deg = 0
+        return { ...b, rot: Math.round(deg) }
       }
       return { ...b, w: Math.max(0.02, px / cv.width - b.x), h: Math.max(0.02, py / cv.height - b.y) }
     }))
@@ -166,7 +200,7 @@ export default function BoxEditor({ mockupId, onClose }) {
           <button className="btn sm ghost" onClick={onClose}>✕ Close</button>
         </div>
         <p className="muted" style={{ margin: '0 0 10px' }}>
-          Khali jagah par drag = naya box · box ke andar drag = move · neele kone se resize · Ctrl+Z = undo
+          Khali jagah par drag = naya box · box ke andar drag = move · neele kone se resize · upar wale ⚪ dot ko pakar kar ghumao = rotate · Ctrl+Z = undo
         </p>
         <canvas
           ref={cvRef}
@@ -194,7 +228,7 @@ export default function BoxEditor({ mockupId, onClose }) {
                 {DNUMS.map((n) => <option key={n} value={n}>{dnumLabel(n)}</option>)}
               </select>
               <label className="muted" style={{ fontSize: 12 }}>
-                rot <input type="range" min="-45" max="45" value={b.rot || 0} onChange={(e) => upd(b.id, { rot: +e.target.value })} style={{ width: 80, verticalAlign: 'middle' }} /> {b.rot || 0}°
+                rot <input type="range" min="-180" max="180" value={b.rot || 0} onChange={(e) => upd(b.id, { rot: +e.target.value })} style={{ width: 80, verticalAlign: 'middle' }} /> {b.rot || 0}°
               </label>
               <button className="btn sm danger" onClick={(e) => { e.stopPropagation(); del(b.id) }}>✕</button>
             </div>
