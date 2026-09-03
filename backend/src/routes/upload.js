@@ -12,13 +12,27 @@ import { requireUser } from '../auth.js'
 const router = Router()
 router.use(requireUser)
 
+// Supabase ki DO qism ki keys hain:
+//   purani (legacy JWT, "eyJ..." se shuru)  -> Authorization: Bearer <key>
+//   nayi  ("sb_secret_..." se shuru)        -> sirf apikey header (Bearer me
+//                                              bhejo to "Invalid Compact JWS")
+// Ye helper dono ko sahi tarah bhejta hai.
+function sbHeaders(extra = {}) {
+  const k = process.env.SUPABASE_SERVICE_KEY || ''
+  return {
+    apikey: k,
+    ...(/^eyJ/.test(k) ? { authorization: `Bearer ${k}` } : {}),
+    ...extra,
+  }
+}
+
 // Create the "images" bucket once (safe to call again — 409/400 = exists).
 let bucketReady = false
 async function ensureBucket() {
   if (bucketReady) return
   const r = await fetch(`${process.env.SUPABASE_URL}/storage/v1/bucket`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}` },
+    headers: sbHeaders({ 'content-type': 'application/json' }),
     body: JSON.stringify({ id: 'images', name: 'images', public: true }),
   })
   if (r.ok || r.status === 409 || r.status === 400) bucketReady = true
@@ -40,7 +54,7 @@ router.post('/', async (req, res) => {
 
     const up = await fetch(`${process.env.SUPABASE_URL}/storage/v1/object/images/${path}`, {
       method: 'POST',
-      headers: { 'content-type': mime, authorization: `Bearer ${process.env.SUPABASE_SERVICE_KEY}` },
+      headers: sbHeaders({ 'content-type': mime }),
       body: buf,
     })
     if (!up.ok) {
