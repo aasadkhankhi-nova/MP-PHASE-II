@@ -160,7 +160,7 @@ export function AppStateProvider({ children }) {
       setWs(cloud)
       await kvSet('ws:' + id, cloud)
       setSync({ state: 'ok', at: Date.now() })
-      healUploads(id)   // background: jo photos cloud par nahi pahunchi unhe ab upload karo
+      healUploads(id, cloud)   // background: jo photos cloud par nahi pahunchi unhe ab upload karo
     } catch (e) {
       if (!silent) console.warn('pull failed', e)
       setWs(cached)   // offline: keep working with the local copy
@@ -198,19 +198,25 @@ export function AppStateProvider({ children }) {
   // healUploads — background repair: jis mockup/design ki photo LOCAL me hai
   // (data:...) lekin cloud imageUrl nahi bana (upload fail hua tha), use ab
   // dubara upload kar ke workspace update kar do. Ek waqt me ek hi run.
+  // AHEM: items ka SNAPSHOT parameter me aata hai — pehle wsRef se parhta tha
+  // jo store khulte waqt abhi PURANA hota tha, is liye heal kabhi chalta hi
+  // nahi tha (dost ke laptop par photos tooti rehti thin).
   const healing = useRef(false)
-  async function healUploads(storeId) {
-    if (healing.current || !getSession()) return
+  async function healUploads(storeId, snapshot) {
+    if (healing.current || !getSession() || !snapshot) return
     healing.current = true
     try {
       for (const kind of ['mockups', 'designs']) {
-        for (const it of wsRef.current[kind] || []) {
+        for (const it of snapshot[kind] || []) {
           if (storeRef.current !== storeId) return
           if (it.imageUrl || !String(it.dataUrl || '').startsWith('data:')) continue
           try {
             const up = await shrinkForCloud(it.dataUrl, { png: kind === 'designs' })
             const url = await uploadImage(up, it.name || 'img')
-            await saveWs(storeId, { ...wsRef.current, [kind]: wsRef.current[kind].map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
+            if (storeRef.current !== storeId) return
+            // ab tak render ho chuka hota hai — wsRef.current TAZA hai
+            const cur = wsRef.current
+            await saveWs(storeId, { ...cur, [kind]: (cur[kind] || []).map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
           } catch { /* agli bar (boot/sync) par phir try hoga */ }
         }
       }
