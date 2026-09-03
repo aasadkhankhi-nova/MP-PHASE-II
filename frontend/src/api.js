@@ -120,7 +120,9 @@ export const genSeo = (payload) => {
 // ---- Google sign-in (Supabase OAuth) ----
 // Supabase project URL is PUBLIC info (safe to keep in frontend code).
 // The secret keys live only on the backend / dashboards, never here.
-const SUPABASE_URL = 'https://upsqhucsiswyhlsnqirq.supabase.co'
+// Self-hosters: apne Supabase project ka URL build-time env se dein
+// (frontend folder me .env file: VITE_SUPABASE_URL=https://<project>.supabase.co)
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://upsqhucsiswyhlsnqirq.supabase.co'
 
 // Build the URL that starts the "Continue with Google" flow.
 // We send the user to Supabase -> Supabase sends them to Google's own
