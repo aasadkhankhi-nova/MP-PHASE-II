@@ -206,20 +206,31 @@ export function AppStateProvider({ children }) {
     if (healing.current || !getSession() || !snapshot) return
     healing.current = true
     try {
+      const todo = []
       for (const kind of ['mockups', 'designs']) {
         for (const it of snapshot[kind] || []) {
-          if (storeRef.current !== storeId) return
-          if (it.imageUrl || !String(it.dataUrl || '').startsWith('data:')) continue
-          try {
-            const up = await shrinkForCloud(it.dataUrl, { png: kind === 'designs' })
-            const url = await uploadImage(up, it.name || 'img')
-            if (storeRef.current !== storeId) return
-            // ab tak render ho chuka hota hai — wsRef.current TAZA hai
-            const cur = wsRef.current
-            await saveWs(storeId, { ...cur, [kind]: (cur[kind] || []).map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
-          } catch { /* agli bar (boot/sync) par phir try hoga */ }
+          if (!it.imageUrl && String(it.dataUrl || '').startsWith('data:')) todo.push([kind, it])
         }
       }
+      console.info(`[heal] ${todo.length} photo(s) cloud par chadhani hain (store ${storeId})`)
+      let ok = 0, fail = 0
+      for (const [kind, it] of todo) {
+        if (storeRef.current !== storeId) { console.info('[heal] store badal gaya — ruk gaya'); return }
+        try {
+          const up = await shrinkForCloud(it.dataUrl, { png: kind === 'designs' })
+          const url = await uploadImage(up, it.name || 'img')
+          if (storeRef.current !== storeId) return
+          // ab tak render ho chuka hota hai — wsRef.current TAZA hai
+          const cur = wsRef.current
+          await saveWs(storeId, { ...cur, [kind]: (cur[kind] || []).map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
+          ok++
+          console.info(`[heal] ✓ ${ok}/${todo.length} — ${it.name}`)
+        } catch (e) {
+          fail++
+          console.error(`[heal] ✗ upload FAIL — ${it.name}:`, e && e.message ? e.message : e)
+        }
+      }
+      if (todo.length) console.info(`[heal] mukammal: ${ok} chadh gayin, ${fail} fail`)
     } finally { healing.current = false }
   }
 
