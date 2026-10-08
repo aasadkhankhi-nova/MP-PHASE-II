@@ -40,15 +40,15 @@ export const pick = (cand, tag) => {
 
 /**
  * matchDesign — core matching rule (PLACEMENT hamesha STRICT):
- *   - Box ka placement design ke placement se EXACT match hona zaruri hai:
- *     "front" box me sirf front-placement design aata hai, "pocket" box me
- *     sirf pocket-placement design. Placement kabhi ignore NAHI hota.
- *   - Design # ('single' / 1..8) us par MAZEED filter hai — placement ka
- *     substitute nahi. "front · single" ka matlab: front placement WALA
- *     single-number design; pocket box us se kabhi nahi bharta.
- *   - Aakhir me color-variant (light/dark area) se sahi version chunta hai.
- * Match na mile to null -> box khali rehta hai aur "missed" report hota hai
- * (e.g. pocket box banaya lekin pocket-placement ka design upload nahi kiya).
+ *   - The box placement must EXACTLY match the design placement:
+ *     a "front" box only takes a front-placement design, a "pocket" box only
+ *     a pocket-placement design. Placement is NEVER ignored.
+ *   - Design # ('single' / 1..8) is an EXTRA filter on top — not a
+ *     substitute for placement. "front · single" means: the single-number
+ *     design WITH front placement; a pocket box is never filled by it.
+ *   - Finally the color variant (light/dark area) picks the right version.
+ * No match -> null -> the box stays empty and is reported as "missed"
+ * (e.g. a pocket box was drawn but no pocket-placement design was uploaded).
  */
 export function matchDesign(designs, box) {
   const target = boxDnum(box)

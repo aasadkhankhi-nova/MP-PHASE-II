@@ -22,7 +22,7 @@ export default function Seo() {
     setBusyId(L.id)
     try {
       const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
-      if (!designs.length) throw new Error('Listing me koi design select nahi hai')
+      if (!designs.length) throw new Error('No design is selected in this listing')
       const images = designs.slice(0, 3).map((d) => d.dataUrl.split(',')[1])
       const r = await genSeo({ images, category: L.category || 'Canvas Wall Art', keywords: L.keywords || '' })
       await app.updListing(L.id, { seo: r.seo })
@@ -39,11 +39,11 @@ export default function Seo() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>✨ Etsy SEO (AI)</h3>
-        <p className="muted">Har listing ke designs dekh kar AI title, tags, description aur ALT banata hai.</p>
+        <p className="muted">AI looks at the designs of each listing and writes the title, tags, description and ALT text.</p>
         {/* SEO runs on the USER'S OWN Gemini key — remind them if it's missing */}
         {!getGeminiKey() && (
           <p className="muted" style={{ color: 'var(--err)' }}>
-            🔑 Pehle apni (free) Gemini API key dalein — sidebar ke neeche apne naam par click karein → Account → "API key" section.
+            🔑 First add your (free) Gemini API key — click your name at the bottom of the sidebar → Account → "API key" section.
           </p>
         )}
         {err && <p className="muted" style={{ color: 'var(--err)' }}>⚠ {err}</p>}
@@ -68,7 +68,7 @@ export default function Seo() {
           )}
         </div>
       ))}
-      {!app.ws.listings.length && <Empty>Pehle Listings screen par listing banayein.</Empty>}
+      {!app.ws.listings.length && <Empty>Create a listing on the Listings screen first.</Empty>}
     </>
   )
 }

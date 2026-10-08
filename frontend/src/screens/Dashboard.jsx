@@ -19,7 +19,7 @@ export default function Dashboard({ go }) {
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🏬 {app.curStore ? app.curStore.name : '—'}</h3>
         <p className="muted">
-          Mockups upload karein → boxes banayein → designs dalein → Listings me generate → SEO.
+          Upload mockups → draw boxes → add designs → generate in Listings → SEO.
         </p>
       </div>
       <div className="grid">

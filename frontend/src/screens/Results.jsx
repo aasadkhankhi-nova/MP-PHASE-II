@@ -55,7 +55,7 @@ export default function Results() {
           </div>
         ))}
       </div>
-      {!all.length && <Empty>Abhi koi output nahi — Listings me generate karein.</Empty>}
+      {!all.length && <Empty>No outputs yet — generate them from Listings.</Empty>}
     </>
   )
 }

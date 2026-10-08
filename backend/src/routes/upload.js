@@ -12,11 +12,11 @@ import { requireUser } from '../auth.js'
 const router = Router()
 router.use(requireUser)
 
-// Supabase ki DO qism ki keys hain:
-//   purani (legacy JWT, "eyJ..." se shuru)  -> Authorization: Bearer <key>
-//   nayi  ("sb_secret_..." se shuru)        -> sirf apikey header (Bearer me
-//                                              bhejo to "Invalid Compact JWS")
-// Ye helper dono ko sahi tarah bhejta hai.
+// Supabase has TWO kinds of keys:
+//   old (legacy JWT, starts with "eyJ...")   -> Authorization: Bearer <key>
+//   new (starts with "sb_secret_...")         -> apikey header only (in Bearer
+//                                              gives "Invalid Compact JWS")
+// This helper sends both kinds correctly.
 function sbHeaders(extra = {}) {
   const k = process.env.SUPABASE_SERVICE_KEY || ''
   return {

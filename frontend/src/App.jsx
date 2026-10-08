@@ -32,7 +32,7 @@ const TITLES = {
   help: { icon: 'ℹ️', label: 'Help center' },
   support: { icon: '💬', label: 'Support' },
 }
-// "＋ Add shop" ke doran naye placeholder store ki id — cleanup isay skip karti hai
+// "＋ Add shop" in progress: id of the new placeholder store — cleanup skips it
 let CONNECTING_ID = null
 
 const ES_STATES = [
@@ -65,9 +65,9 @@ function ShopSwitcher({ app, screen, go }) {
         // CLEANUP: "Add shop" makes a placeholder workspace before sending
         // the user to Etsy. If they backed out without granting access,
         // that empty "New shop" would linger — remove it automatically.
-        // SIRF app-boot par chalta hai, aur ABHI-connect-hone-wala store
-        // (CONNECTING_ID) kabhi delete nahi hota — warna Add shop ke doran
-        // naya placeholder delete ho kar "store not found" aata tha.
+        // runs ONLY on app boot, and the store being connected RIGHT NOW
+        // (CONNECTING_ID) is never deleted — otherwise during Add shop
+        // the new placeholder got deleted and "store not found" appeared.
         const orphans = app.stores.filter((s) => s.name === 'New shop' && !m[s.id] && s.id !== CONNECTING_ID)
         if (orphans.length) {
           const wasCurrent = orphans.some((o) => o.id === app.curStoreId)
@@ -79,7 +79,7 @@ function ShopSwitcher({ app, screen, go }) {
         }
       })
       .catch(() => {})
-    // stores load hone par (bhi) chale — CONNECTING_ID guard mid-flow store bachata hai
+    // also runs when stores load — the CONNECTING_ID guard protects a mid-flow store
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.authed, app.stores.length])
 
@@ -100,7 +100,7 @@ function ShopSwitcher({ app, screen, go }) {
     setOpen(false)
     try {
       const st = await app.addStore('New shop')
-      CONNECTING_ID = st.id                 // cleanup isay haath na lagaye
+      CONNECTING_ID = st.id                 // cleanup must not touch it
       await app.selectStore(st.id)
       const r = await etsy.connectUrl(st.id)
       window.location.href = r.url          // -> Etsy permission page
@@ -113,7 +113,7 @@ function ShopSwitcher({ app, screen, go }) {
         <span className={'etsy-badge' + (curShop ? '' : ' off')}>{curShop ? 'E' : '🏬'}</span>
         <span className="shop-switch-name">
           <small>{curShop ? 'Etsy' : 'store'}</small>
-          {curShop || (cur ? cur.name : 'store chunein')}
+          {curShop || (cur ? cur.name : 'Select a store')}
         </span>
         <span style={{ opacity: 0.5 }}>▾</span>
       </button>
@@ -144,16 +144,16 @@ function Placeholder({ title }) {
   return (
     <div className="card">
       <h3 style={{ marginTop: 0 }}>{title}</h3>
-      <p className="muted">Ye screen agle update me aa rahi hai.</p>
+      <p className="muted">This screen is coming in the next update.</p>
     </div>
   )
 }
 
 /**
- * ProfilesPanel — 🧩 rail ka panel: sari profiles ki list (rename / delete).
- * Profile BANANE ka tariqa: kisi listing ke edit page par sab set kar ke
- * neeche ⊞ "Save as Profile" dabayein. Launchpad aur edit page dono
- * isi list se profiles uthate hain.
+ * ProfilesPanel — 🧩 rail panel: list of all profiles (rename / delete).
+ * How to CREATE a profile: set everything on a listing's edit page and
+ * press ⊞ "Save as Profile" at the bottom. Launchpad and the edit page both
+ * take profiles from this list.
  */
 function ProfilesPanel({ onEdit, storeId }) {
   const list = getProfiles(storeId)
@@ -162,20 +162,20 @@ function ProfilesPanel({ onEdit, storeId }) {
       <div className="nav-sec">Profiles ({list.length})</div>
       {!list.length && (
         <p className="muted" style={{ padding: '4px 10px' }}>
-          🧩 Abhi koi profile nahi. Kisi listing ke edit page par sab kuch set kar ke
-          neeche <b>⊞ Save as Profile</b> dabayein — details, price, variations,
-          shipping, materials aur description ka profile-hissa us me save ho jayega.
-          Phir Launchpad aur edit page par ek click me lagta hai.
+          🧩 No profiles yet. Set everything up on a listing's edit page and
+          press <b>⊞ Save as Profile</b> at the bottom — details, price, variations,
+          shipping, materials and the profile part of the description are saved in it.
+          Then apply it with one click in Launchpad or on the edit page.
         </p>
       )}
       {list.map((p) => (
-        <button key={p.id} className="nav-item" title="Profile kholein (edit)" onClick={() => onEdit(p.id)}>
+        <button key={p.id} className="nav-item" title="Open profile (edit)" onClick={() => onEdit(p.id)}>
           🧩 <span className="ellip">{p.name}</span>
         </button>
       ))}
       {list.length > 0 && (
         <p className="muted" style={{ padding: '8px 10px', fontSize: 12 }}>
-          Naam par click karein — profile ka pura edit page khulta hai.
+          Click a name to open the profile's full edit page.
         </p>
       )}
     </div>
@@ -183,10 +183,10 @@ function ProfilesPanel({ onEdit, storeId }) {
 }
 
 function Shell() {
-  // edit page khula ho to left FILTER SIDEBAR chhup jata hai (Vela jaisa full-width edit)
+  // when the edit page is open the left FILTER SIDEBAR hides (full-width edit, Vela-style)
   const [editFull, setEditFull] = useState(false)
-  const [profEditId, setProfEditId] = useState(null)   // kaunsi profile edit ho rahi hai
-  const [pendingListing, setPendingListing] = useState(null)  // Launchpad → is Etsy listing ka edit page kholo
+  const [profEditId, setProfEditId] = useState(null)   // which profile is being edited
+  const [pendingListing, setPendingListing] = useState(null)  // Launchpad → open the edit page of this Etsy listing
   const app = useApp()
   const [screen, setScreen] = useState('etsystore')     // Etsy Store is home now
   const [rail, setRail] = useState('listings')          // icon rail: which PANEL shows (listings | profiles)
@@ -194,7 +194,7 @@ function Shell() {
 
   // ---- Etsy data lives HERE (shared by the sidebar menu + the screen) ----
   const [esState, setEsState] = useState('active')      // selected Status
-  const [esFilt, setEsFilt] = useState({ sections: [], ships: [], rets: [], video: false })  // CHECKBOX filters — multi-select, status badalne par bhi qaim
+  const [esFilt, setEsFilt] = useState({ sections: [], ships: [], rets: [], video: false })  // CHECKBOX filters — multi-select, kept even when the status changes
   const [es, setEs] = useState({ checked: false, connected: false, shopName: '', counts: null, names: { sections: [], ship: [], ret: [] }, idx: null, busy: false, err: null })
 
   // Ping the backend on load; keep re-checking while the free server wakes up.
@@ -250,13 +250,13 @@ function Shell() {
     return f
   }, [es.idx])
 
-  // 🚀 Launchpad count = sirf PENDING listings (Etsy par ja chuki hat jati hain)
+  // 🚀 Launchpad count = only PENDING listings (ones already sent to Etsy drop off)
   const lpCount = (app.ws.listings || []).filter((L) => !L.etsy?.listingId).length
 
   // sidebar row helpers
-  // Status click: sirf status badalta hai — checked boxes waise hi lage rehte hain
+  // Status click: only the status changes — checked boxes stay as they are
   const pickState = (id) => { setEsState(id); setScreen('etsystore') }
-  // checkbox toggle: value ko list me dalo / nikalo (multi-select, OR within a category)
+  // checkbox toggle: add / remove the value in the list (multi-select, OR within a category)
   const pickFilt = (key, val) => {
     setScreen('etsystore')
     if (key === 'video') { setEsFilt((f) => ({ ...f, video: !f.video })); return }
@@ -268,11 +268,11 @@ function Shell() {
   }
   const onDeleted = (id) => setEs((e) => ({ ...e, idx: (e.idx || []).filter((l) => String(l.id) !== String(id)) }))
 
-  // "＋ Add shop" (panel ke bottom par, Vela-style) — seedha Etsy grant-access
+  // "＋ Add shop" (at the bottom of the panel, Vela-style) — straight to Etsy grant-access
   const addShopBottom = async () => {
     try {
       const st = await app.addStore('New shop')
-      CONNECTING_ID = st.id                 // cleanup isay haath na lagaye
+      CONNECTING_ID = st.id                 // cleanup must not touch it
       await app.selectStore(st.id)
       const r = await etsy.connectUrl(st.id)
       window.location.href = r.url
@@ -328,7 +328,7 @@ function Shell() {
         )}
       </nav>
 
-      {/* ==================== PANEL (second sidebar) — edit page par hidden ==================== */}
+      {/* ==================== PANEL (second sidebar) — hidden on the edit page ==================== */}
       {!editFull && <aside className="sidebar">
         <ShopSwitcher app={app} screen={screen} go={setScreen} />
 
@@ -421,7 +421,7 @@ function Shell() {
         {/* ---- pinned bottom: Add shop (Vela-style) + server warning ---- */}
         <div className="side-bottom">
           {api.state === 'down' && (
-            <span className="chip err">⚠ server jag raha hai… thori dair me refresh karein</span>
+            <span className="chip err">⚠ Server is waking up… please refresh in a moment</span>
           )}
           <button className="add-shop-btn" onClick={addShopBottom}>＋ Add shop</button>
         </div>
@@ -431,7 +431,7 @@ function Shell() {
         <div className="topbar">
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {current ? (eff === 'etsystore' ? current.label : `${current.icon} ${current.label}`) : ''}
-            {/* refresh = sirf gol icon, Vela jaisa (hover par waqt dikhta hai) */}
+            {/* refresh = round icon only, Vela-style (hover shows the time) */}
             {eff === 'etsystore' && es.connected && (
               <button className={'refresh-ic' + (es.busy ? ' spin' : '')} disabled={es.busy}
                 title={'Refresh shop' + (es.at ? ' · ' + Math.max(1, Math.round((Date.now() - es.at) / 60000)) + ' min ago' : '')}

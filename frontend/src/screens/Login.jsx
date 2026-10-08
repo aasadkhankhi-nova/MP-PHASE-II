@@ -44,17 +44,17 @@ export default function Login() {
   const go = async () => {
     setMsg(null); setBusy(true)
     try {
-      if (!email.trim()) throw new Error('Email likhein')
-      if (pass.length < 6) throw new Error('Password kam az kam 6 harf ka ho')
+      if (!email.trim()) throw new Error('Please enter your email')
+      if (pass.length < 6) throw new Error('Password must be at least 6 characters')
       if (mode === 'up') {
         // ---- extra checks only for account creation ----
-        if (!first.trim()) throw new Error('First name likhein')
-        if (!last.trim()) throw new Error('Last name likhein')
-        if (!dob) throw new Error('Date of birth chunein')
+        if (!first.trim()) throw new Error('Please enter your first name')
+        if (!last.trim()) throw new Error('Please enter your last name')
+        if (!dob) throw new Error('Please select your date of birth')
         const age = (Date.now() - new Date(dob).getTime()) / (365.25 * 24 * 3600 * 1000)
-        if (!(age >= 18)) throw new Error('Account ke liye umar kam az kam 18 saal honi chahiye')
-        if (pass !== pass2) throw new Error('Dono passwords match nahi karte')
-        if (!accept) throw new Error('Terms accept karna zaroori hai (checkbox tick karein)')
+        if (!(age >= 18)) throw new Error('You must be at least 18 years old to create an account')
+        if (pass !== pass2) throw new Error('Passwords do not match')
+        if (!accept) throw new Error('Please accept the Terms (tick the checkbox)')
 
         const meta = { first_name: first.trim(), last_name: last.trim(), full_name: `${first.trim()} ${last.trim()}`, dob }
         const sess = await authSignup(email.trim(), pass, meta, capToken)
@@ -72,7 +72,7 @@ export default function Login() {
   // Send the verification email again (free plan: max ~2 emails/hour).
   const doResend = async () => {
     setMsg(null); setBusy(true)
-    try { await authResend(email.trim()); setMsg('✉️ Email dobara bhej di gayi hai.') }
+    try { await authResend(email.trim()); setMsg('✉️ Verification email sent again.') }
     catch (e) { setMsg('⚠ ' + (e.message || e)) }
     finally { setBusy(false) }
   }
@@ -90,15 +90,15 @@ export default function Login() {
         {mode === 'verify' ? (
           <>
             {/* ---- step 2 of signup: confirm via the link in the email ---- */}
-            <p className="muted" style={{ marginTop: 10 }}>Email check karein 📬</p>
+            <p className="muted" style={{ marginTop: 10 }}>Check your email 📬</p>
             <p className="muted" style={{ fontSize: 13, lineHeight: 1.6 }}>
-              <b>{email}</b> par confirmation email bheji gayi hai.
-              Us me <b>"Confirm email address"</b> link par click karein —
-              aap khud-ba-khud login ho jayenge. (Spam folder bhi check karein.)
+              We sent a confirmation email to <b>{email}</b>.
+              Click the <b>"Confirm email address"</b> link in it and
+              you will be signed in automatically. (Please check your spam folder too.)
             </p>
             {msg && <p className="muted" style={{ marginTop: 10 }}>{msg}</p>}
             <p className="muted" style={{ marginTop: 12, textAlign: 'center' }}>
-              Email nahi mili? <a className="lnk" onClick={doResend}>Resend email</a>
+              Didn't get the email? <a className="lnk" onClick={doResend}>Resend email</a>
               {' · '}<a className="lnk" onClick={() => { setMode('in'); setMsg(null) }}>Back</a>
             </p>
           </>
@@ -139,7 +139,7 @@ export default function Login() {
             </button>
 
             {/* divider between password login and Google login */}
-            <div className="login-or"><span>ya</span></div>
+            <div className="login-or"><span>or</span></div>
 
             {/* Google one-click login (real Google account picker) */}
             <button className="btn-google" disabled={busy} onClick={doGoogle}>
@@ -155,16 +155,21 @@ export default function Login() {
             {msg && <p className="muted" style={{ marginTop: 10 }}>{msg}</p>}
             <p className="muted" style={{ marginTop: 12, textAlign: 'center' }}>
               {up ? (
-                <>Account hai? <a className="lnk" onClick={() => { setMode('in'); setMsg(null) }}>Sign in</a></>
+                <>Already have an account? <a className="lnk" onClick={() => { setMode('in'); setMsg(null) }}>Sign in</a></>
               ) : (
-                <>Naya user? <a className="lnk" onClick={() => { setMode('up'); setMsg(null) }}>Create account</a></>
+                <>New here? <a className="lnk" onClick={() => { setMode('up'); setMsg(null) }}>Create account</a></>
               )}
             </p>
             <p className="muted" style={{ marginTop: 6, textAlign: 'center', fontSize: 12 }}>
-              Real accounts — kisi bhi device se sign in karein, aap ka data cloud me hai.
+              Real accounts — sign in from any device, your data is saved in the cloud.
             </p>
           </>
         )}
+        {/* Required by the Etsy API Terms of Use */}
+        <p className="etsy-disclaimer">
+          The term "Etsy" is a trademark of Etsy, Inc. This application uses the Etsy API
+          but is not endorsed or certified by Etsy, Inc.
+        </p>
       </div>
 
       {/* Terms & Privacy popup */}

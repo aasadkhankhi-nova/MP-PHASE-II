@@ -23,8 +23,8 @@ import etsyRoutes from './routes/etsy.js'
 import { pool } from './db.js'
 
 const app = express()
-// 60mb limit: design/mockup images aur listing VIDEOS base64 ban kar JSON me
-// aati hain (base64 = size × 1.37, to ~40MB ki video tak aa jati hai).
+// 60mb limit: design/mockup images and listing VIDEOS arrive as base64 inside
+// JSON (base64 = size × 1.37, so videos up to ~40MB fit).
 app.use(express.json({ limit: '60mb' }))
 
 // CORS: only allow requests from our own website(s).

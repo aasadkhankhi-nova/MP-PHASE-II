@@ -26,10 +26,10 @@ const Ctx = createContext(null)
 export const useApp = () => useContext(Ctx)
 
 /**
- * shrinkForCloud — CLOUD copy ke liye photo compress (Supabase Storage sirf
- * 1 GB free hai). Max 2000px — Etsy ki recommended quality barqarar rehti hai.
- * Mockups = JPEG (chhota), designs = PNG (transparency zaruri hai).
- * LOCAL copy full-size hi rehti hai; sirf upload hone wali copy chhoti hoti hai.
+ * shrinkForCloud — compress photos for the CLOUD copy (Supabase Storage is only
+ * 1 GB free). Max 2000px — keeps Etsy's recommended quality.
+ * Mockups = JPEG (smaller), designs = PNG (transparency is required).
+ * The LOCAL copy stays full-size; only the uploaded copy is smaller.
  */
 function shrinkForCloud(dataUrl, { png = false } = {}) {
   return new Promise((resolve) => {
@@ -38,7 +38,7 @@ function shrinkForCloud(dataUrl, { png = false } = {}) {
       try {
         const k = Math.min(1, 2000 / Math.max(im.width, im.height))
         if (k === 1 && !png) {
-          // already chhoti + JPEG chahiye — phir bhi JPEG me convert (PNG mockup bara hota hai)
+          // already small + JPEG wanted — still convert to JPEG (PNG mockups are large)
         }
         const c = document.createElement('canvas')
         c.width = Math.max(1, Math.round(im.width * k)); c.height = Math.max(1, Math.round(im.height * k))
@@ -141,15 +141,15 @@ export function AppStateProvider({ children }) {
       setSync((s) => ({ ...s, state: 'pulling' }))
       const r = await cloudWs.pull(id)
       const cloud = fromCloud(r.ws)
-      // Listings ke LOCAL-only hisse wapas jorho (cloud me nahi jate):
+      // re-attach the LOCAL-only parts of listings (they are not sent to the cloud):
       // outputs (photos), video, sku, profileId, etsy link.
       cloud.listings = cloud.listings.map((L) => {
         const loc = (cached.listings || []).find((c) => c.id === L.id) || {}
         return { ...L, outputs: loc.outputs || [], video: loc.video || null, sku: loc.sku || '', profileId: loc.profileId || null, etsy: loc.etsy || null }
       })
-      // SELF-HEAL merge: agar cloud me image_url NAHI hai (upload us waqt fail
-      // hua tha) lekin local cache me asli photo (data:) mojud hai to use
-      // wapas laga do — warna refresh ke baad photo "tooti" dikhti hai.
+      // SELF-HEAL merge: if the cloud has NO image_url (the upload failed
+      // at the time) but the real photo (data:) exists in the local cache,
+      // put it back — otherwise the photo looks "broken" after a refresh.
       const mergeKeep = (cloudArr, cacheArr) => cloudArr.map((it) => {
         if (it.dataUrl) return it
         const loc = (cacheArr || []).find((c) => c.id === it.id)
@@ -160,7 +160,7 @@ export function AppStateProvider({ children }) {
       setWs(cloud)
       await kvSet('ws:' + id, cloud)
       setSync({ state: 'ok', at: Date.now() })
-      healUploads(id, cloud)   // background: jo photos cloud par nahi pahunchi unhe ab upload karo
+      healUploads(id, cloud)   // background: upload any photos that never reached the cloud
     } catch (e) {
       if (!silent) console.warn('pull failed', e)
       setWs(cached)   // offline: keep working with the local copy
@@ -195,12 +195,12 @@ export function AppStateProvider({ children }) {
     schedulePush()
   }, [schedulePush])
 
-  // healUploads — background repair: jis mockup/design ki photo LOCAL me hai
-  // (data:...) lekin cloud imageUrl nahi bana (upload fail hua tha), use ab
-  // dubara upload kar ke workspace update kar do. Ek waqt me ek hi run.
-  // AHEM: items ka SNAPSHOT parameter me aata hai — pehle wsRef se parhta tha
-  // jo store khulte waqt abhi PURANA hota tha, is liye heal kabhi chalta hi
-  // nahi tha (dost ke laptop par photos tooti rehti thin).
+  // healUploads — background repair: for any mockup/design whose photo is LOCAL
+  // (data:...) but has no cloud imageUrl (the upload failed), upload it
+  // again now and update the workspace. Only one run at a time.
+  // NOTE: items arrive as a SNAPSHOT parameter — it used to read from wsRef,
+  // which was still STALE while a store was opening, so heal never actually
+  // ran (photos stayed broken on a friend's laptop).
   const healing = useRef(false)
   async function healUploads(storeId, snapshot) {
     if (healing.current || !getSession() || !snapshot) return
@@ -212,15 +212,15 @@ export function AppStateProvider({ children }) {
           if (!it.imageUrl && String(it.dataUrl || '').startsWith('data:')) todo.push([kind, it])
         }
       }
-      console.info(`[heal] ${todo.length} photo(s) cloud par chadhani hain (store ${storeId})`)
+      console.info(`[heal] ${todo.length} photo(s) to upload to the cloud (store ${storeId})`)
       let ok = 0, fail = 0
       for (const [kind, it] of todo) {
-        if (storeRef.current !== storeId) { console.info('[heal] store badal gaya — ruk gaya'); return }
+        if (storeRef.current !== storeId) { console.info('[heal] store changed — stopped'); return }
         try {
           const up = await shrinkForCloud(it.dataUrl, { png: kind === 'designs' })
           const url = await uploadImage(up, it.name || 'img')
           if (storeRef.current !== storeId) return
-          // ab tak render ho chuka hota hai — wsRef.current TAZA hai
+          // by now it has rendered — wsRef.current is FRESH
           const cur = wsRef.current
           await saveWs(storeId, { ...cur, [kind]: (cur[kind] || []).map((x) => (x.id === it.id ? { ...x, imageUrl: url } : x)) })
           ok++
@@ -230,7 +230,7 @@ export function AppStateProvider({ children }) {
           console.error(`[heal] ✗ upload FAIL — ${it.name}:`, e && e.message ? e.message : e)
         }
       }
-      if (todo.length) console.info(`[heal] mukammal: ${ok} chadh gayin, ${fail} fail`)
+      if (todo.length) console.info(`[heal] done: ${ok} uploaded, ${fail} failed`)
     } finally { healing.current = false }
   }
 
@@ -311,11 +311,11 @@ export function AppStateProvider({ children }) {
       return st
     },
 
-    // importIntoCurrent — Phase I ka EK store ka data ISI (current) store me
-    // MERGE karta hai (naya store nahi banta). Etsy-OAuth se connected store
-    // me purana kaam laane ke liye. Id-clash par nayi id, sets ka link qaim.
+    // importIntoCurrent — MERGES ONE Phase I store's data into THIS (current) store
+    // (no new store is created). Used to bring old work into a store
+    // connected via Etsy OAuth. On an id clash a new id is used, set links are kept.
     async importIntoCurrent(incoming, onProgress) {
-      if (!curStoreId) throw new Error('Pehle koi store select karein')
+      if (!curStoreId) throw new Error('Please select a store first')
       const wsAdd = {
         mockups: incoming.mockups || [],
         designs: incoming.designs || [],
@@ -356,7 +356,7 @@ export function AppStateProvider({ children }) {
     // ---- mockups ----
     // On upload: read file -> auto light/dark tag -> (if logged in) upload
     // the image to cloud Storage so other devices can see it too.
-    // setIds (optional): naye mockups seedha in sets me chale jayen (Sets screen se upload)
+    // setIds (optional): new mockups go straight into these sets (upload from the Sets screen)
     async addMockupFiles(files, setIds = []) {
       let n = 0, failed = 0
       const items = []
@@ -368,13 +368,13 @@ export function AppStateProvider({ children }) {
         if (authed) {
           const up = await shrinkForCloud(dataUrl)   // cloud copy 2000px JPEG (storage bachao)
           try { imageUrl = await uploadImage(up, f.name) }
-          catch { try { imageUrl = await uploadImage(up, f.name) } catch { failed++ } }  // ek retry, phir warn
+          catch { try { imageUrl = await uploadImage(up, f.name) } catch { failed++ } }  // one retry, then warn
         }
         items.push({ id: uid(), name: f.name.replace(/\.[^.]+$/, ''), dataUrl, imageUrl, colorTag: tag, boxes: [], setIds: [...setIds] })
         n++
       }
       if (n) await saveWs(curStoreId, { ...wsRef.current, mockups: [...wsRef.current.mockups, ...items] })
-      if (failed) alert(`⚠ ${failed} photo(s) cloud par upload NahI ho saki(n) (backend/internet issue).\nWo abhi sirf is browser me hain — app agli sync par khud dubara upload karega.\nBackend theek hone tak page refresh karne se pehle ☁ chip green hone ka intezar karein.`)
+      if (failed) alert(`⚠ ${failed} photo(s) could NOT be uploaded to the cloud (backend/internet issue).\nThey are only in this browser for now — the app will retry the upload on the next sync.\nPlease wait for the ☁ chip to turn green before refreshing the page.`)
       return n
     },
     async updMockup(id, patch) {
@@ -402,7 +402,7 @@ export function AppStateProvider({ children }) {
         n++
       }
       if (n) await saveWs(curStoreId, { ...wsRef.current, designs: [...wsRef.current.designs, ...items] })
-      if (failed) alert(`⚠ ${failed} design(s) cloud par upload nahi ho sake — abhi sirf is browser me hain, app agli sync par khud dubara try karega.`)
+      if (failed) alert(`⚠ ${failed} design(s) could not be uploaded to the cloud — they are only in this browser for now; the app will retry on the next sync.`)
       return n
     },
     async updDesign(id, patch) {

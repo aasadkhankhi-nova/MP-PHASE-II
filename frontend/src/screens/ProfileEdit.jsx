@@ -1,20 +1,20 @@
 /**
- * ProfileEdit.jsx — PROFILE ka apna edit page.
- * Profiles panel me profile ke naam par click karne se khulta hai.
- * Yahan profile ki HAR cheez badal sakte hain:
- *   description ka profile-hissa, materials, Details (type, who/what/when,
+ * ProfileEdit.jsx — the PROFILE's own edit page.
+ * Opens when you click a profile name in the Profiles panel.
+ * EVERYTHING in a profile can be changed here:
+ *   the profile part of the description, materials, Details (type, who/what/when,
  *   partners, category, attributes, renewal, section), price+quantity,
  *   variations (options add/delete, Individual price/qty, visibility),
- *   aur Shipping ka sara data.
- * Sab dropdowns LIVE Etsy se aate hain (wahi jo listing edit page par hain).
- * SKU profile me kabhi nahi hota. Save = sirf profile update (Etsy par kuch nahi jata).
+ *   and all Shipping data.
+ * All dropdowns come LIVE from Etsy (the same ones as on the listing edit page).
+ * SKU is never in a profile. Save = profile update only (nothing is sent to Etsy).
  */
 import React, { useState, useEffect, useMemo } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { etsy } from '../api.js'
 import { getProfiles, upsertProfile, delProfile } from '../store/profiles.js'
 
-// photo ko chhota (max 800px JPEG) kar ke profile me rakhte hain
+// shrink the photo (max 800px JPEG) and keep it in the profile
 function shrinkImg(src) {
   return new Promise((resolve, reject) => {
     const im = new Image()
@@ -25,7 +25,7 @@ function shrinkImg(src) {
       c.getContext('2d').drawImage(im, 0, 0, c.width, c.height)
       resolve(c.toDataURL('image/jpeg', 0.85))
     }
-    im.onerror = () => reject(new Error('photo load nahi hui'))
+    im.onerror = () => reject(new Error('Photo failed to load'))
     im.src = src
   })
 }
@@ -54,8 +54,8 @@ export default function ProfileEdit({ id, onBack }) {
   const [msg, setMsg] = useState(null)
   const [matIn, setMatIn] = useState('')
   const [addIn, setAddIn] = useState({})
-  const [vtab, setVtab] = useState('vars')   // vars|price|qty|sku|vis|photos|proc — bilkul listing edit jaisa
-  // live Etsy data (wahi sab jo listing edit page par hai)
+  const [vtab, setVtab] = useState('vars')   // vars|price|qty|sku|vis|photos|proc — exactly like listing edit
+  // live Etsy data (the same as on the listing edit page)
   const [sections, setSections] = useState(null)
   const [enums, setEnums] = useState(null)
   const [partners, setPartners] = useState(null)
@@ -87,7 +87,7 @@ export default function ProfileEdit({ id, onBack }) {
     if (!taxoTree || !det.taxonomyId) return
     const path = findTaxoPath(taxoTree, det.taxonomyId)
     if (path.length) setTaxoPath(path)
-  }, [taxoTree])   // sirf pehli bar
+  }, [taxoTree])   // first time only
 
   const effTaxo = taxoPath.length ? taxoPath[taxoPath.length - 1] : (det.taxonomyId || null)
   useEffect(() => {
@@ -95,10 +95,10 @@ export default function ProfileEdit({ id, onBack }) {
     setProps(null)
     etsy.properties(storeId, effTaxo).then((r) => setProps(r.properties)).catch(() => setProps([]))
   }, [storeId, effTaxo])
-  // category badle to profile me bhi update
+  // when the category changes, update the profile too
   useEffect(() => { if (effTaxo && String(effTaxo) !== String(det.taxonomyId || '')) uD({ taxonomyId: effTaxo }) }, [effTaxo])
 
-  // ---- variations helpers (profile ke products par) ----
+  // ---- variations helpers (on the profile's products) ----
   const prods = p?.variations?.products || []
   const plist = useMemo(() => {
     const list = []
@@ -127,15 +127,15 @@ export default function ProfileEdit({ id, onBack }) {
   const setGroup = (field, idxs, v) => setProds(prods.map((r, i) => (idxs.includes(i) ? { ...r, [field]: v } : r)))
 
   const delOption = (P, value) => {
-    if (P.options.length <= 1) return setMsg('⚠ Property ka aakhri option delete nahi ho sakta')
+    if (P.options.length <= 1) return setMsg('⚠ The last option of a property cannot be deleted')
     const left = prods.filter((r) => !(r.propertyValues || []).some((pv) => pv.property_id === P.id && (pv.values || []).join(', ') === value))
-    if (!left.length) return setMsg('⚠ Aakhri combo delete nahi ho sakta')
+    if (!left.length) return setMsg('⚠ The last combination cannot be deleted')
     setProds(left)
   }
   const addOption = (P) => {
     const name = (addIn[P.id] || '').trim()
     if (!name) return
-    if (P.options.some((o) => o.value.toLowerCase() === name.toLowerCase())) return setMsg('⚠ Ye option pehle se hai')
+    if (P.options.some((o) => o.value.toLowerCase() === name.toLowerCase())) return setMsg('⚠ This option already exists')
     const otherIds = plist.filter((x) => x.id !== P.id).map((x) => x.id)
     const seen = new Set(); const add = []
     for (const r of prods) {
@@ -145,31 +145,31 @@ export default function ProfileEdit({ id, onBack }) {
       const pvs = (r.propertyValues || []).map((pv) => (pv.property_id === P.id ? { property_id: P.id, property_name: P.name, value_ids: [], values: [name] } : pv))
       add.push({ ...r, propertyValues: pvs, enabled: true })
     }
-    if (prods.length + add.length > 400) return setMsg('⚠ 400 combinations se zyada nahi')
+    if (prods.length + add.length > 400) return setMsg('⚠ No more than 400 combinations')
     setProds([...prods, ...add]); setAddIn({ ...addIn, [P.id]: '' })
   }
   const comboLabel = (r) => (r.propertyValues || []).map((pv) => (pv.values || []).join(', ')).join(' / ') || '—'
 
   const save = () => {
     upsertProfile(storeId, p)
-    setMsg(`✅ Profile "${p.name}" save ho gayi`)
+    setMsg(`✅ Profile "${p.name}" saved`)
   }
 
   const nice = (v) => String(v).replace(/_/g, ' ').replace(/(\d{4}) (\d{4})/, '$1 - $2').replace(/^\w/, (c) => c.toUpperCase())
 
-  if (!p) return <div className="card"><p className="muted">Profile nahi mili. <a className="lnk" onClick={onBack}>← wapas</a></p></div>
+  if (!p) return <div className="card"><p className="muted">Profile not found. <a className="lnk" onClick={onBack}>← Back</a></p></div>
 
   return (
     <>
-      {/* ---- naam + description ka profile-hissa ---- */}
+      {/* ---- name + profile part of the description ---- */}
       <div className="card">
         <div className="topbar" style={{ margin: '0 0 10px' }}>
           <b>🧩 Profile edit</b>
           <button className="btn sm ghost" onClick={onBack}>← Back</button>
         </div>
-        <label className="muted" style={{ fontSize: 12 }}>Profile ka naam</label>
+        <label className="muted" style={{ fontSize: 12 }}>Profile name</label>
         <input value={p.name} onChange={(e) => u({ name: e.target.value })} style={{ width: '100%', maxWidth: 380, marginBottom: 10 }} />
-        <label className="muted" style={{ fontSize: 12 }}>Description ka PROFILE-hissa (design ki 300-char description ke neeche, ek khali line chor kar lagta hai)</label>
+        <label className="muted" style={{ fontSize: 12 }}>PROFILE part of the description (added below the design's 300-char description, after one blank line)</label>
         <textarea value={p.desc2 || ''} onChange={(e) => u({ desc2: e.target.value })} rows={7}
           style={{ width: '100%', border: '1px solid var(--line)', borderRadius: 9, padding: 10, fontSize: 13 }} />
       </div>
@@ -184,19 +184,19 @@ export default function ProfileEdit({ id, onBack }) {
           {!(p.materials || []).length && <span className="muted" style={{ fontSize: 12 }}>—</span>}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <input placeholder="naya material" value={matIn} onChange={(e) => setMatIn(e.target.value)}
+          <input placeholder="new material" value={matIn} onChange={(e) => setMatIn(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter' && matIn.trim() && (p.materials || []).length < 13) { u({ materials: [...(p.materials || []), matIn.trim()] }); setMatIn('') } }} style={{ maxWidth: 260 }} />
           <button className="btn sm ghost" onClick={() => { if (matIn.trim() && (p.materials || []).length < 13) { u({ materials: [...(p.materials || []), matIn.trim()] }); setMatIn('') } }}>＋ Add</button>
         </div>
       </div>
 
-      {/* ---- Details (sab live Etsy se) ---- */}
+      {/* ---- Details (all live from Etsy) ---- */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>Details</h3>
         <label className="muted" style={{ fontSize: 12 }}>Type</label>
         <div className="tcards">
           <button type="button" className={'tcard' + (det.ltype !== 'download' ? ' on' : '')} onClick={() => uD({ ltype: 'physical' })}>
-            <b>{det.ltype !== 'download' ? '◉' : '○'} Physical</b><span>Ship hone wali cheez</span>
+            <b>{det.ltype !== 'download' ? '◉' : '○'} Physical</b><span>A physical item to ship</span>
           </button>
           <button type="button" className={'tcard' + (det.ltype === 'download' ? ' on' : '')} onClick={() => uD({ ltype: 'download' })}>
             <b>{det.ltype === 'download' ? '◉' : '○'} Digital</b><span>Download file</span>
@@ -240,7 +240,7 @@ export default function ProfileEdit({ id, onBack }) {
               )
             })}
           </div>
-        ) : <p className="muted" style={{ fontSize: 12, margin: '4px 0 14px' }}>{partners === null ? '⏳' : 'Shop me koi production partner nahi.'}</p>}
+        ) : <p className="muted" style={{ fontSize: 12, margin: '4px 0 14px' }}>{partners === null ? '⏳' : 'No production partners in this shop.'}</p>}
 
         <label className="muted" style={{ fontSize: 12 }}>Category</label>
         {!taxoTree && <p className="muted" style={{ fontSize: 12 }}>⏳ category tree…</p>}
@@ -267,7 +267,7 @@ export default function ProfileEdit({ id, onBack }) {
           </div>
         )}
 
-        {/* attributes — isi category ke live fields */}
+        {/* attributes — live fields for this category */}
         {props === null && <p className="muted">⏳ attributes…</p>}
         <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 14 }}>
           {(props || []).map((pr) => {
@@ -306,17 +306,17 @@ export default function ProfileEdit({ id, onBack }) {
         <label className="muted" style={{ fontSize: 12 }}>Renewal options</label>
         <div className="tcards">
           <button type="button" className={'tcard' + (det.autoRenew ? ' on' : '')} onClick={() => uD({ autoRenew: true })}>
-            <b>{det.autoRenew ? '◉' : '○'} Automatic</b><span>$0.20 me khud renew (recommended)</span>
+            <b>{det.autoRenew ? '◉' : '○'} Automatic</b><span>Renews automatically for $0.20 (recommended)</span>
           </button>
           <button type="button" className={'tcard' + (!det.autoRenew ? ' on' : '')} onClick={() => uD({ autoRenew: false })}>
             <b>{!det.autoRenew ? '◉' : '○'} Manual</b><span>Khud renew karunga</span>
           </button>
         </div>
 
-        <p className="muted" style={{ fontSize: 12 }}>Note: shop-SECTION profile ka hissa nahi hota — wo har listing par alag chuna jata hai.</p>
+        <p className="muted" style={{ fontSize: 12 }}>Note: the shop SECTION is not part of a profile — it is chosen separately on each listing.</p>
       </div>
 
-      {/* ---- Size-chart photos — Launchpad ki har nayi listing me mockups ke BAAD lagti hain ---- */}
+      {/* ---- Size-chart photos — added AFTER the mockups on every new Launchpad listing ---- */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>📐 Size charts / photos <span className="chip">{(p.photos || []).length}</span></h3>
         <div className="vphotos">
@@ -327,10 +327,10 @@ export default function ProfileEdit({ id, onBack }) {
                 onClick={() => u({ photos: p.photos.filter((_, x) => x !== i) })}>🗑</button>
             </span>
           ))}
-          {!(p.photos || []).length && <span className="muted" style={{ fontSize: 12 }}>Abhi koi photo nahi — listing se Save as Profile karte waqt chunein, ya yahan upload karein.</span>}
+          {!(p.photos || []).length && <span className="muted" style={{ fontSize: 12 }}>No photos yet — choose them when using Save as Profile on a listing, or upload them here.</span>}
         </div>
         <label className="btn sm ghost" style={{ cursor: 'pointer', marginTop: 10, display: 'inline-block' }}>
-          ＋ Photo add karein
+          ＋ Add photo
           <input type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={async (e) => {
             const list = [...(p.photos || [])]
             for (const f of Array.from(e.target.files)) {
@@ -342,10 +342,10 @@ export default function ProfileEdit({ id, onBack }) {
             u({ photos: list }); e.target.value = ''
           }} />
         </label>
-        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Ye photos har nayi listing me generated mockups ke BAAD khud lag jayengi.</p>
+        <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>These photos are added automatically AFTER the generated mockups on every new listing.</p>
       </div>
 
-      {/* ---- Price & Quantity (jab variations na hon) ---- */}
+      {/* ---- Price & Quantity (when there are no variations) ---- */}
       {!prods.length && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Price & Quantity</h3>
@@ -359,26 +359,26 @@ export default function ProfileEdit({ id, onBack }) {
               <input type="number" min="1" value={p.priceQty?.quantity || ''} onChange={(e) => u({ priceQty: { ...(p.priceQty || {}), quantity: e.target.value } })} style={{ width: 110 }} />
             </span>
           </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>Variations wali profile banane ke liye: variations wali listing par ⊞ Save as Profile karein.</p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>To create a profile with variations: use ⊞ Save as Profile on a listing that has variations.</p>
         </div>
       )}
 
-      {/* ---- Variations — BILKUL listing edit page jaisa (wahi sub-tabs, wahi layout) ---- */}
+      {/* ---- Variations — EXACTLY like the listing edit page (same sub-tabs, same layout) ---- */}
       {prods.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>Variations <span className="chip">{prods.length} combos</span></h3>
           {prods.length > 399 && (
-            <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>⚠ Should not exceed 400 options combinations — abhi {prods.length} hain.</p>
+            <p style={{ color: 'var(--err)', fontSize: 12, fontWeight: 600 }}>⚠ Should not exceed 400 options combinations — currently {prods.length}.</p>
           )}
 
-          {/* sub-tabs (Vela jaisa — wahi jo listing edit me hain) */}
+          {/* sub-tabs (Vela-style — the same as in listing edit) */}
           <div className="vtabs">
             {[['vars', 'Variations'], ['price', 'Price'], ['qty', 'Quantity'], ['sku', 'SKU'], ['vis', 'Visibility'], ['photos', 'Photos'], ['proc', 'Processing']].map(([tid, label]) => (
               <button key={tid} className={'vtab' + (vtab === tid ? ' on' : '')} onClick={() => setVtab(tid)}>{label}</button>
             ))}
           </div>
 
-          {/* --- Variations: har property ka panel — options + Add/Delete --- */}
+          {/* --- Variations: a panel for each property — options + Add/Delete --- */}
           {vtab === 'vars' && (
             <div className="vpanels">
               {plist.map((P) => (
@@ -402,7 +402,7 @@ export default function ProfileEdit({ id, onBack }) {
             </div>
           )}
 
-          {/* --- Price / Quantity: "Individual ..." checkbox per property (listing edit jaisa) --- */}
+          {/* --- Price / Quantity: "Individual ..." checkbox per property (like listing edit) --- */}
           {(vtab === 'price' || vtab === 'qty') && (() => {
             const conf = vtab === 'price'
               ? { on: pOn, key: 'pOn', field: 'price', label: 'price' }
@@ -420,7 +420,7 @@ export default function ProfileEdit({ id, onBack }) {
                 </div>
                 {!conf.on.length && (
                   <span style={{ display: 'inline-flex', gap: 8, alignItems: 'center' }}>
-                    <label className="muted" style={{ fontSize: 12 }}>Individual OFF hai — sab combos ki EK {conf.label}:</label>
+                    <label className="muted" style={{ fontSize: 12 }}>Individual is OFF — ONE {conf.label} for all combinations:</label>
                     <input type="number" step={vtab === 'price' ? '0.01' : '1'} value={prods[0]?.[conf.field] || ''}
                       onChange={(e) => setProds(prods.map((r) => ({ ...r, [conf.field]: e.target.value })))} style={{ width: 110 }} />
                   </span>
@@ -440,14 +440,14 @@ export default function ProfileEdit({ id, onBack }) {
             )
           })()}
 
-          {/* --- SKU: profile me kabhi store nahi hota (aapka rule) --- */}
+          {/* --- SKU: never stored in a profile (your rule) --- */}
           {vtab === 'sku' && (
             <p className="muted" style={{ fontSize: 13 }}>
-              SKU profile ka hissa <b>nahi</b> hota — har nayi listing me SKU aap khud, end me, final-check page par dalte hain.
+              SKU is <b>not</b> part of a profile — you enter the SKU yourself on every new listing, at the end, on the final-check page.
             </p>
           )}
 
-          {/* --- Visibility: har combo ka on/off toggle --- */}
+          {/* --- Visibility: on/off toggle for each combination --- */}
           {vtab === 'vis' && (
             <div className="vrows">
               {prods.map((r, i) => (
@@ -460,23 +460,23 @@ export default function ProfileEdit({ id, onBack }) {
             </div>
           )}
 
-          {/* --- Photos: variation-photos listing ki hoti hain, profile ki nahi --- */}
+          {/* --- Photos: variation photos belong to the listing, not the profile --- */}
           {vtab === 'photos' && (
             <p className="muted" style={{ fontSize: 13 }}>
-              Variation photos har listing ki APNI photos se link hoti hain, is liye ye profile me store nahi hotin —
-              listing ke edit page par isi naam ke tab me set karein.
+              Variation photos are linked to each listing's OWN photos, so they are not stored in the profile —
+              set them in the tab with the same name on the listing's edit page.
             </p>
           )}
 
-          {/* --- Processing: Etsy API me per-variation processing nahi hota --- */}
+          {/* --- Processing: the Etsy API has no per-variation processing --- */}
           {vtab === 'proc' && (
             <p className="muted" style={{ fontSize: 13 }}>
-              Processing time Etsy me shipping/readiness profile ke saath aata hai — Etsy ki API per-variation
-              processing set karne ki ijazat nahi deti. General profile neeche <b>Shipping</b> card me set hota hai.
+              On Etsy, processing time comes with the shipping/readiness profile — Etsy's API does not allow
+              setting processing per variation. The general profile is set in the <b>Shipping</b> card below.
             </p>
           )}
 
-          <button className="btn sm ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('Variations profile se hata dein? (price/qty wapas single ho jayega)')) u({ variations: null }) }}>🗑 Variations hatao</button>
+          <button className="btn sm ghost" style={{ marginTop: 12 }} onClick={() => { if (confirm('Remove variations from the profile? (price/qty go back to a single value)')) u({ variations: null }) }}>🗑 Remove variations</button>
         </div>
       )}
 
@@ -531,10 +531,10 @@ export default function ProfileEdit({ id, onBack }) {
       {/* ---- bottom bar ---- */}
       <div className="ebar">
         <button className="btn ghost" onClick={onBack}>Cancel</button>
-        <button className="btn danger" onClick={() => { if (confirm(`Profile "${p.name}" DELETE karni hai?`)) { delProfile(storeId, p.id); onBack() } }}>🗑 Delete</button>
+        <button className="btn danger" onClick={() => { if (confirm(`DELETE profile "${p.name}"?`)) { delProfile(storeId, p.id); onBack() } }}>🗑 Delete</button>
         <span style={{ flex: 1, fontSize: 13 }}>
           {msg ? <span className={String(msg).startsWith('⚠') ? 'err-msg' : 'muted'}>{msg}</span>
-            : <span className="muted">Save = sirf profile update — Etsy par kuch nahi jata.</span>}
+            : <span className="muted">Save = profile update only — nothing is sent to Etsy.</span>}
         </span>
         <button className="btn" onClick={save}>💾 Save profile</button>
       </div>

@@ -26,9 +26,9 @@ export function setSession(s) {
 }
 
 /**
- * refreshSession — login-token ki meyaad (~1 ghanta) khatam hone par
- * refresh_token se NAYA token le kar session taza karta hai — user ko
- * dobara login nahi karna parta. Ek waqt me ek hi refresh chalta hai.
+ * refreshSession — when the login token expires (~1 hour),
+ * gets a NEW token with the refresh_token and renews the session — the user
+ * never has to sign in again. Only one refresh runs at a time.
  */
 let REFRESHING = null
 async function refreshSession() {
@@ -59,14 +59,14 @@ async function refreshSession() {
 /**
  * api — generic request helper.
  * - adds JSON headers + the auth token
- * - token purana ho (exp guzar gaya) to PEHLE khud refresh karta hai
- * - 401 par ek bar refresh kar ke request DOBARA bhejta hai;
- *   refresh bhi fail ho tab hi session saaf hota hai (Login screen)
+ * - if the token is old (exp passed) it refreshes FIRST
+ * - on a 401 it refreshes once and sends the request AGAIN;
+ *   only if the refresh also fails is the session cleared (Login screen)
  * - on any error it throws with the server's error message
  */
 export async function api(path, options = {}) {
   let s = getSession()
-  // token expiry ke qareeb/paar? pehle hi taza kar lo
+  // token near/past expiry? refresh it first
   if (s?.refresh_token && s.exp && Date.now() > s.exp) {
     s = (await refreshSession()) || s
   }
@@ -120,8 +120,8 @@ export const genSeo = (payload) => {
 // ---- Google sign-in (Supabase OAuth) ----
 // Supabase project URL is PUBLIC info (safe to keep in frontend code).
 // The secret keys live only on the backend / dashboards, never here.
-// Self-hosters: apne Supabase project ka URL build-time env se dein
-// (frontend folder me .env file: VITE_SUPABASE_URL=https://<project>.supabase.co)
+// Self-hosters: set your Supabase project URL via a build-time env
+// (.env file in the frontend folder: VITE_SUPABASE_URL=https://<project>.supabase.co)
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL || 'https://upsqhucsiswyhlsnqirq.supabase.co'
 
 // Build the URL that starts the "Continue with Google" flow.
@@ -158,7 +158,7 @@ export function captureOAuthSession() {
   } catch {}
   const sess = {
     access_token: token,
-    refresh_token: p.get('refresh_token') || null,   // auto-refresh ke liye
+    refresh_token: p.get('refresh_token') || null,   // for auto-refresh
     exp: Date.now() + Math.max(60, (Number(p.get('expires_in')) || 3600) - 120) * 1000,
     user,
   }
@@ -232,7 +232,7 @@ export const authChangeEmail = (email, password, currentEmail) => api('/api/auth
 //      never touch the browser). One MP store = one Etsy shop. ----
 export const etsy = {
   status: (storeId) => api(`/api/etsy/status?storeId=${storeId}`),                       // connected? which shop?
-  connections: () => api('/api/etsy/connections'),                                       // sab stores ke shop-names (sidebar switcher)
+  connections: () => api('/api/etsy/connections'),                                       // shop names for all stores (sidebar switcher)
   connectUrl: (storeId) => api(`/api/etsy/connect?storeId=${storeId}`),                  // returns Etsy permission-page URL
   disconnect: (storeId) => api('/api/etsy/disconnect', { method: 'POST', body: JSON.stringify({ storeId }) }),
   shippingProfiles: (storeId) => api(`/api/etsy/shipping-profiles?storeId=${storeId}`),  // for the publish form
@@ -242,10 +242,10 @@ export const etsy = {
   listing: (storeId, id) => api(`/api/etsy/listing?storeId=${storeId}&id=${id}`), // one listing, full detail
   sections: (storeId) => api(`/api/etsy/sections?storeId=${storeId}`),            // shop's own sections (for the editor)
   update: (storeId, id, patch) => api('/api/etsy/listing/update', { method: 'POST', body: JSON.stringify({ storeId, id, patch }) }), // save edits to Etsy
-  properties: (storeId, taxonomyId) => api(`/api/etsy/properties?storeId=${storeId}&taxonomyId=${taxonomyId}`), // category ke attribute dropdowns
+  properties: (storeId, taxonomyId) => api(`/api/etsy/properties?storeId=${storeId}&taxonomyId=${taxonomyId}`), // attribute dropdowns for a category
   setProperty: (storeId, id, propertyId, valueIds, values) => api('/api/etsy/listing/property', { method: 'POST', body: JSON.stringify({ storeId, id, propertyId, valueIds, values }) }),
   returnPolicies: (storeId) => api(`/api/etsy/return-policies?storeId=${storeId}`),
-  enums: () => api('/api/etsy/enums'),   // who_made / when_made ke current options
+  enums: () => api('/api/etsy/enums'),   // current who_made / when_made options
   inventory: (storeId, id) => api(`/api/etsy/inventory?storeId=${storeId}&id=${id}`),                  // variations (per-combo price/qty)
   saveInventory: (storeId, id, inv) => api('/api/etsy/inventory/update', { method: 'POST', body: JSON.stringify({ storeId, id, ...inv }) }),
   addImage: (storeId, id, dataUrl, rank) => api('/api/etsy/listing/image', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, rank }) }),
@@ -264,20 +264,20 @@ export const etsy = {
   createSection: (storeId, title) => api('/api/etsy/section/create', { method: 'POST', body: JSON.stringify({ storeId, title }) }),
   createReturnPolicy: (storeId, data) => api('/api/etsy/return-policy/create', { method: 'POST', body: JSON.stringify({ storeId, ...data }) }),
   createShipProfile: (storeId, data) => api('/api/etsy/shipping-profile/create', { method: 'POST', body: JSON.stringify({ storeId, ...data }) }),
-  // Photo-editor: Etsy CDN image -> dataURL (backend proxy se, CORS ke bina)
+  // Photo-editor: Etsy CDN image -> dataURL (through the backend proxy, no CORS issues)
   imageData: async (url) => {
     const s = getSession()
     const res = await fetch(`${getApiBase()}/api/etsy/imgfetch?url=${encodeURIComponent(url)}`, {
       headers: s?.access_token ? { Authorization: `Bearer ${s.access_token}` } : {},
     })
-    if (!res.ok) throw new Error('image load nahi hui (' + res.status + ')')
+    if (!res.ok) throw new Error('Image failed to load (' + res.status + ')')
     const blob = await res.blob()
     return new Promise((r) => { const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(blob) })
   },
   addVideo: (storeId, id, dataUrl, name) => api('/api/etsy/listing/video', { method: 'POST', body: JSON.stringify({ storeId, id, dataUrl, name }) }),
   delVideo: (storeId, id, videoId) => api('/api/etsy/listing/video/delete', { method: 'POST', body: JSON.stringify({ storeId, id, videoId }) }),
   setState: (storeId, id, state) => api('/api/etsy/listing/state', { method: 'POST', body: JSON.stringify({ storeId, id, state }) }), // publish / deactivate
-  index: (storeId, state, fresh) => api(`/api/etsy/index?storeId=${storeId}&state=${state}${fresh ? '&fresh=1' : ''}`),   // POORI shop ka index; fresh=1 = cache chhor kar naya scan
+  index: (storeId, state, fresh) => api(`/api/etsy/index?storeId=${storeId}&state=${state}${fresh ? '&fresh=1' : ''}`),   // index of the WHOLE shop; fresh=1 = skip the cache and rescan
   deleteListing: (storeId, id) => api('/api/etsy/listing/delete', { method: 'POST', body: JSON.stringify({ storeId, id }) }),
   publish: (payload) => api('/api/etsy/publish', { method: 'POST', body: JSON.stringify(payload) }), // draft + photos
 }

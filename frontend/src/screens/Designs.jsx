@@ -17,7 +17,7 @@ export default function Designs() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🎨 Designs <span className="chip">{app.ws.designs.length}</span></h3>
-        <Drop label="＋ Design PNGs yahan drop karein (transparent PNG best)" accept="image/png,image/svg+xml" onFiles={(f) => app.addDesignFiles(f)} />
+        <Drop label="＋ Drop design PNGs here (transparent PNG works best)" accept="image/png,image/svg+xml" onFiles={(f) => app.addDesignFiles(f)} />
       </div>
       <div className="grid">
         {app.ws.designs.map((d) => (
@@ -43,7 +43,7 @@ export default function Designs() {
           </div>
         ))}
       </div>
-      {!app.ws.designs.length && <Empty>Abhi koi design nahi. Dark + light variants ko same Design number dein.</Empty>}
+      {!app.ws.designs.length && <Empty>No designs yet. Give the dark and light variants the same Design number.</Empty>}
     </>
   )
 }

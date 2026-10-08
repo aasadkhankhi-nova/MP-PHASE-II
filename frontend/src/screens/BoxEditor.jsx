@@ -76,10 +76,10 @@ export default function BoxEditor({ mockupId, onClose }) {
       ctx.fillStyle = 'rgba(79,109,245,.10)'
       ctx.fillRect(-w / 2, -h / 2, w, h)
       if (b.id === sel) {
-        // resize handle (bottom-right corner) — box ke saath ghumta hai
+        // resize handle (bottom-right corner) — rotates with the box
         ctx.fillStyle = '#4f6df5'
         ctx.fillRect(w / 2 - HANDLE / 2, h / 2 - HANDLE / 2, HANDLE, HANDLE)
-        // ROTATE handle: top-center se upar ek line + pakadne wala dot (Canva jaisa)
+        // ROTATE handle: a line up from top-center + a grab dot (like Canva)
         ctx.strokeStyle = '#4f6df5'
         ctx.lineWidth = 1.5
         ctx.beginPath(); ctx.moveTo(0, -h / 2); ctx.lineTo(0, -h / 2 - STEM); ctx.stroke()
@@ -104,8 +104,8 @@ export default function BoxEditor({ mockupId, onClose }) {
     return [((e.clientX - r.left) * cv.width) / r.width, ((e.clientY - r.top) * cv.height) / r.height]
   }
 
-  // Mouse point ko box ke ROTATED local frame me le jao (center = 0,0).
-  // Isse rotate/resize/move ka hit-test ghume hue box par bhi sahi rehta hai.
+  // Move the mouse point into the box's ROTATED local frame (center = 0,0).
+  // This keeps rotate/resize/move hit-testing correct on a rotated box.
   const toLocal = (b, cv, px, py) => {
     const cx = (b.x + b.w / 2) * cv.width, cy = (b.y + b.h / 2) * cv.height
     const a = -(((b.rot || 0) * Math.PI) / 180)
@@ -121,7 +121,7 @@ export default function BoxEditor({ mockupId, onClose }) {
     if (s) {
       const w = s.w * cv.width, h = s.h * cv.height
       const [lx, ly] = toLocal(s, cv, px, py)
-      // upar wala ROTATE dot pakda? -> rotate
+      // grabbed the top ROTATE dot? -> rotate
       if (Math.hypot(lx, ly - (-h / 2 - STEM)) < DOT + 6) {
         snap(); dragRef.current = { mode: 'rot', id: s.id }; return
       }
@@ -159,7 +159,7 @@ export default function BoxEditor({ mockupId, onClose }) {
         return { ...b, x: Math.max(0, Math.min(1 - b.w, (px - d.dx) / cv.width)), y: Math.max(0, Math.min(1 - b.h, (py - d.dy) / cv.height)) }
       }
       if (d.mode === 'rot') {
-        // dot center ke UPAR hota hai, is liye +90° — seedha (0°) ke paas aa jaye to snap
+        // the dot sits ABOVE the center, hence +90° — snap when close to straight (0°)
         const cx = (b.x + b.w / 2) * cv.width, cy = (b.y + b.h / 2) * cv.height
         let deg = (Math.atan2(py - cy, px - cx) * 180) / Math.PI + 90
         if (deg > 180) deg -= 360
@@ -178,7 +178,7 @@ export default function BoxEditor({ mockupId, onClose }) {
   // Validate then write boxes back onto the mockup (this also cloud-syncs).
   const save = async () => {
     const bad = boxes.find((b) => !b.name || !b.tag)
-    if (bad) { alert('Har box ka placement aur color tag set karein.'); return }
+    if (bad) { alert('Please set a placement and color tag for every box.'); return }
     await app.updMockup(mockupId, { boxes })
     onClose()
   }
@@ -200,7 +200,7 @@ export default function BoxEditor({ mockupId, onClose }) {
           <button className="btn sm ghost" onClick={onClose}>✕ Close</button>
         </div>
         <p className="muted" style={{ margin: '0 0 10px' }}>
-          Khali jagah par drag = naya box · box ke andar drag = move · neele kone se resize · upar wale ⚪ dot ko pakar kar ghumao = rotate · Ctrl+Z = undo
+          Drag on empty space = new box · drag inside a box = move · blue corner = resize · drag the top ⚪ dot = rotate · Ctrl+Z = undo
         </p>
         <canvas
           ref={cvRef}
@@ -233,7 +233,7 @@ export default function BoxEditor({ mockupId, onClose }) {
               <button className="btn sm danger" onClick={(e) => { e.stopPropagation(); del(b.id) }}>✕</button>
             </div>
           ))}
-          {!boxes.length && <p className="muted">Abhi koi box nahi — canvas par drag kar ke banayein.</p>}
+          {!boxes.length && <p className="muted">No boxes yet — drag on the canvas to draw one.</p>}
         </div>
         <div style={{ display: 'flex', gap: 8, marginTop: 12, justifyContent: 'flex-end' }}>
           <button className="btn ghost" onClick={undo}>↺ Undo</button>

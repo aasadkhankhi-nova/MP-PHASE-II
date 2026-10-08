@@ -1,18 +1,18 @@
 /**
- * PhotoEdit.jsx — Etsy jaisa FULL-SCREEN photo editor.
- * Layout bilkul Etsy wala: center me picture, neeche tools ki patti
- * (Adjust / Transform ke do mode), upar-right Apply + Cancel.
+ * PhotoEdit.jsx — Etsy-style FULL-SCREEN photo editor.
+ * Same layout as Etsy: picture in the center, tool strip below
+ * (two modes: Adjust / Transform), Apply + Cancel top-right.
  *
- * Adjust  — Etsy ke sab 11 controls: Brightness, Exposure, Shadows,
+ * Adjust  — all 11 Etsy controls: Brightness, Exposure, Shadows,
  *           Highlights, Blacks, Whites, Contrast, Saturation,
- *           Temperature, Sharpness, Clarity. (pixel-level, browser me hi;
- *           kisi tool par click karo to uska slider khulta hai)
+ *           Temperature, Sharpness, Clarity. (pixel-level, entirely in the browser;
+ *           click a tool to open its slider)
  * Transform — Rotate ⟲/⟳ 90°, Flip horizontal/vertical, Crop
- *           (ratio chuno, box ko pakar kar sarkao, size slider se chhota/bara)
+ *           (pick a ratio, drag the box to move it, resize with the size slider)
  *
- * Apply   — full-resolution par sab effects laga kar nayi image banti hai
- *           aur PARENT ko dataURL milta hai (wo Etsy par replace karta hai).
- * Cancel  — kuch nahi badalta.
+ * Apply   — applies all effects at full resolution to make a new image
+ *           and hands the dataURL to the PARENT (which replaces it on Etsy).
+ * Cancel  — nothing changes.
  */
 import React, { useState, useEffect, useRef } from 'react'
 
@@ -25,9 +25,9 @@ const TOOLS = [
 const ZERO = Object.fromEntries(TOOLS.map(([k]) => [k, 0]))
 const RATIOS = [['off', 'No crop'], ['1', '1:1'], ['0.8', '4:5'], ['1.5', '3:2'], ['1.7778', '16:9']]
 
-// ---------- pixel math (Adjust ke sab sliders ek pass me) ----------
+// ---------- pixel math (all Adjust sliders in one pass) ----------
 function adjustPixels(d, p) {
-  const ex = Math.pow(2, p.exposure / 100)                     // exposure = light ka doubling
+  const ex = Math.pow(2, p.exposure / 100)                     // exposure = doubling of light
   const br = p.brightness * 0.8
   const ck = (259 * (p.contrast * 1.28 + 255)) / (255 * (259 - p.contrast * 1.28))
   const sat = 1 + p.saturation / 100
@@ -52,7 +52,7 @@ function adjustPixels(d, p) {
   }
 }
 
-// separable box-blur (sharpness/clarity ke unsharp-mask ke liye)
+// separable box-blur (for the sharpness/clarity unsharp mask)
 function boxBlur(src, w, h, r) {
   const tmp = new Float32Array(src.length), out = new Uint8ClampedArray(src.length)
   const n = 2 * r + 1
@@ -95,26 +95,26 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
   const [img, setImg] = useState(null)          // loaded Image element
   const [err, setErr] = useState(null)
   const [mode, setMode] = useState('adjust')    // 'adjust' | 'transform'
-  const [tool, setTool] = useState(null)        // kaunsa Adjust slider khula hai
+  const [tool, setTool] = useState(null)        // which Adjust slider is open
   const [p, setP] = useState({ ...ZERO })       // slider values
   const [rot, setRot] = useState(0)             // 0/90/180/270
   const [flipH, setFlipH] = useState(false)
   const [flipV, setFlipV] = useState(false)
-  const [ratio, setRatio] = useState('off')     // crop ratio ('off' = nahi)
+  const [ratio, setRatio] = useState('off')     // crop ratio ('off' = none)
   const [crop, setCrop] = useState({ cx: 0.5, cy: 0.5, s: 0.9 })  // center + size (fractions)
   const [busy, setBusy] = useState(false)
   const cvRef = useRef(null)
   const dragRef = useRef(null)
 
-  // image load (parent dataURL deta hai — CDN ho to backend proxy se aati hai)
+  // image load (the parent passes a dataURL — CDN images come through the backend proxy)
   useEffect(() => {
     const im = new Image()
     im.onload = () => setImg(im)
-    im.onerror = () => setErr('Image load nahi hui')
+    im.onerror = () => setErr('Image failed to load')
     im.src = src
   }, [src])
 
-  // rotate/flip laga kar ek canvas banao (maxSide tak scale)
+  // apply rotate/flip onto a canvas (scaled up to maxSide)
   const orient = (maxSide) => {
     const sw = img.width, sh = img.height
     const rotated = rot % 180 !== 0
@@ -130,7 +130,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
     return c
   }
 
-  // crop box (canvas coords) — ratio ke hisaab se max fit, phir s se chhota
+  // crop box (canvas coords) — max fit for the ratio, then shrunk by s
   const cropRect = (W, H) => {
     const R = parseFloat(ratio)
     let w = Math.min(W, H * R), h = w / R
@@ -140,7 +140,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
     return { x, y, w, h }
   }
 
-  // ---- live preview (har slider/transform change par) ----
+  // ---- live preview (on every slider/transform change) ----
   useEffect(() => {
     if (!img || !cvRef.current) return
     const base = orient(640)
@@ -155,7 +155,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
     cv.width = w; cv.height = h
     const cx = cv.getContext('2d')
     cx.drawImage(base, 0, 0)
-    // crop overlay: bahar ka hissa dark + white border
+    // crop overlay: darken the outside + white border
     if (mode === 'transform' && ratio !== 'off') {
       const rct = cropRect(w, h)
       cx.fillStyle = 'rgba(0,0,0,0.45)'
@@ -168,7 +168,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
     }
   }, [img, p, rot, flipH, flipV, mode, ratio, crop])
 
-  // crop box ko pakar kar sarkana
+  // dragging the crop box
   const pDown = (e) => {
     if (mode !== 'transform' || ratio === 'off') return
     dragRef.current = { x: e.clientX, y: e.clientY, cx: crop.cx, cy: crop.cy }
@@ -181,11 +181,11 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
   }
   const pUp = () => { dragRef.current = null }
 
-  // ---- Apply: full-resolution par sab kuch laga kar parent ko do ----
+  // ---- Apply: apply everything at full resolution and hand it to the parent ----
   const apply = async () => {
     if (!img) return
     setBusy(true)
-    // UI ko saans lene do, phir heavy kaam
+    // let the UI breathe, then do the heavy work
     await new Promise((r) => setTimeout(r, 30))
     try {
       let base = orient(3000)
@@ -211,7 +211,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
 
   return (
     <div className="pe-overlay" onMouseMove={pMove} onMouseUp={pUp}>
-      {/* top bar — Apply / Cancel (Etsy jaisa upar-right) */}
+      {/* top bar — Apply / Cancel (top-right, like Etsy) */}
       <div className="pe-top">
         <button className="pe-apply" disabled={busy || !img || !changed} onClick={apply}>{busy ? '⏳…' : 'Apply'}</button>
         <button className="pe-cancel" disabled={busy} onClick={onCancel}>Cancel</button>
@@ -219,14 +219,14 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
 
       {/* center — picture */}
       <div className="pe-stage">
-        {!img && !err && <p className="muted">⏳ image load ho rahi hai…</p>}
+        {!img && !err && <p className="muted">⏳ Loading image…</p>}
         {err && <p className="muted">⚠ {err}</p>}
         {img && <canvas ref={cvRef} className="pe-canvas" onMouseDown={pDown} style={{ cursor: mode === 'transform' && ratio !== 'off' ? 'move' : 'default' }} />}
       </div>
 
       {/* bottom — tools */}
       <div className="pe-bottom">
-        {/* Adjust: chune hue tool ka slider */}
+        {/* Adjust: slider for the selected tool */}
         {mode === 'adjust' && tool && (
           <div className="pe-sliderow">
             <span className="pe-slabel">{TOOLS.find(([k]) => k === tool)?.[1]}</span>
@@ -265,7 +265,7 @@ export default function PhotoEdit({ src, onApply, onCancel }) {
           </div>
         )}
 
-        {/* mode toggle — Etsy jaisa Adjust / Transform */}
+        {/* mode toggle — Adjust / Transform, like Etsy */}
         <div className="pe-modes">
           <button className={'pe-mode' + (mode === 'adjust' ? ' on' : '')} onClick={() => setMode('adjust')}>Adjust</button>
           <button className={'pe-mode' + (mode === 'transform' ? ' on' : '')} onClick={() => { setMode('transform'); setTool(null) }}>Transform</button>

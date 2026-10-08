@@ -63,7 +63,7 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 
 .store-switch { width: 100%; margin: 2px 0 10px; font-weight: 600; }
 
-/* ---- Login: "ya" divider between password form and Google button ---- */
+/* ---- Login: "or" divider between password form and Google button ---- */
 .login-or { display: flex; align-items: center; gap: 10px; margin: 12px 0; color: var(--muted); font-size: 12px; }
 .login-or::before, .login-or::after { content: ''; flex: 1; height: 1px; background: var(--line, #e3e6ee); }
 
@@ -169,7 +169,7 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .etab.on { color: var(--txt); border-bottom-color: var(--accent); }
 .etab-dot { width: 7px; height: 7px; border-radius: 50%; background: #b0295e; display: inline-block; flex-shrink: 0; }
 
-/* ---- Choose Profile bar on the edit page — hamari BLUE theme (Vela ka design, apna color) ---- */
+/* ---- Choose Profile bar on the edit page — our BLUE theme (Vela-style layout, our own colors) ---- */
 .profile-bar { background: var(--accent-soft); border: 1px solid #d4dcfb; border-radius: 12px; padding: 10px 12px; margin-bottom: 12px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
 .profile-bar select { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 9px 12px; font-weight: 600; min-width: 190px; font-family: inherit; }
 
@@ -259,7 +259,7 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .vphoto:hover { border-color: #b9c4f5; }
 .vphoto.sel { border-color: var(--accent); box-shadow: 0 0 0 1.5px var(--accent); }
 
-/* ---- RED error system (Etsy limits cross hone par) ---- */
+/* ---- RED error system (when an Etsy limit is exceeded) ---- */
 .err-card { border-color: var(--err) !important; }
 .err-badge { background: var(--err); color: #fff; border-radius: 5px; font-size: 10px; font-weight: 800; padding: 2px 8px; letter-spacing: .05em; vertical-align: middle; }
 .in-err { background: #fdf0f4 !important; border-color: var(--err) !important; }
@@ -288,3 +288,6 @@ input, select, textarea { border: 1px solid var(--line); border-radius: 9px; pad
 .pub-txt { flex: 1; display: flex; flex-direction: column; line-height: 1.25; text-align: left; }
 .pub-txt small { color: var(--mut); font-weight: 500; font-size: 11.5px; }
 .pub-check { color: var(--ok); font-weight: 800; }
+
+/* Etsy API trademark notice (required by Etsy's API Terms) */
+.etsy-disclaimer{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--line);font-size:11px;line-height:1.5;text-align:center;color:var(--mut)}

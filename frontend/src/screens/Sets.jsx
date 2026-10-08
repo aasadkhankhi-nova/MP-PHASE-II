@@ -1,11 +1,11 @@
 /**
  * Sets.jsx — Manage sets (named groups of mockups, e.g. "Framed 24x36").
- * Har set card par:
- *   - uske mockups ke thumbnails (✕ = set se nikalo, mockup delete NAHI hota)
- *   - "＋ Add mockups"  -> picker modal: pehle se uploaded mockups par click
- *                         kar ke set me daalo/nikalo
- *   - "⬆ Upload new"    -> nayi photos seedha IS set me upload
- * (Mockups screen ke chip-buttons bhi pehle ki tarah kaam karte hain.)
+ * On every set card:
+ *   - thumbnails of its mockups (✕ = remove from set, the mockup is NOT deleted)
+ *   - "＋ Add mockups"  -> picker modal: click already-uploaded mockups
+ *                         to add them to / remove them from the set
+ *   - "⬆ Upload new"    -> upload new photos straight into THIS set
+ * (The chip buttons on the Mockups screen still work as before.)
  */
 import React, { useState } from 'react'
 import { useApp } from '../store/AppState.jsx'
@@ -14,8 +14,8 @@ import { Empty, confirmDel } from '../components/ui.jsx'
 export default function Sets() {
   const app = useApp()
   const [name, setName] = useState('')
-  const [pickFor, setPickFor] = useState(null)   // set id jiska picker khula hai
-  const [busyUp, setBusyUp] = useState(null)     // set id jisme upload chal raha hai
+  const [pickFor, setPickFor] = useState(null)   // set id whose picker is open
+  const [busyUp, setBusyUp] = useState(null)     // set id currently uploading
 
   const inSet = (m, sid) => (m.setIds || []).includes(sid)
   const members = (sid) => app.ws.mockups.filter((m) => inSet(m, sid))
@@ -31,9 +31,9 @@ export default function Sets() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🗂️ Mockup Sets <span className="chip">{app.ws.sets.length}</span></h3>
-        <p className="muted">Set = mockups ka group. Neeche har set me mockups add/upload kar sakte hain (Mockups screen ke chips se bhi hota hai).</p>
+        <p className="muted">A set = a group of mockups. Add or upload mockups to each set below (you can also use the chips on the Mockups screen).</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && (app.addSet(name), setName(''))} placeholder="Set ka naam" style={{ flex: 1, minWidth: 200 }} />
+          <input value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && name.trim() && (app.addSet(name), setName(''))} placeholder="Set name" style={{ flex: 1, minWidth: 200 }} />
           <button className="btn" onClick={() => { if (name.trim()) { app.addSet(name); setName('') } }}>＋ Create set</button>
         </div>
       </div>
@@ -56,24 +56,24 @@ export default function Sets() {
               <button className="btn sm danger" onClick={() => confirmDel(`set "${s.name}"`) && app.delSet(s.id)}>Delete</button>
             </div>
 
-            {/* is set ke mockups */}
+            {/* this set's mockups */}
             <div className="vphotos" style={{ marginTop: 10 }}>
               {mems.map((m) => (
                 <span key={m.id} style={{ position: 'relative', display: 'inline-block' }} title={m.name}>
                   <img src={m.dataUrl} alt={m.name} className="vphoto" style={{ cursor: 'default' }} />
-                  <button className="ph-tool" title="Set se nikalo (mockup delete nahi hota)"
+                  <button className="ph-tool" title="Remove from set (the mockup is not deleted)"
                     style={{ position: 'absolute', top: 2, right: 2, background: '#fff', borderRadius: 6 }}
                     onClick={() => app.toggleMockupSet(m.id, s.id)}>✕</button>
                 </span>
               ))}
-              {!mems.length && <span className="muted" style={{ fontSize: 12 }}>Is set me abhi koi mockup nahi — "＋ Add mockups" ya "⬆ Upload new" use karein.</span>}
+              {!mems.length && <span className="muted" style={{ fontSize: 12 }}>No mockups in this set yet — use "＋ Add mockups" or "⬆ Upload new".</span>}
             </div>
           </div>
         )
       })}
-      {!app.ws.sets.length && <Empty>Abhi koi set nahi.</Empty>}
+      {!app.ws.sets.length && <Empty>No sets yet.</Empty>}
 
-      {/* ---- picker: pehle se uploaded mockups me se chunein ---- */}
+      {/* ---- picker: choose from already-uploaded mockups ---- */}
       {pickSet && (
         <div className="modal-overlay" onClick={() => setPickFor(null)}>
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
@@ -82,9 +82,9 @@ export default function Sets() {
               <button className="btn sm ghost" onClick={() => setPickFor(null)}>✓ Done</button>
             </div>
             <p className="muted" style={{ margin: '0 0 10px', fontSize: 12 }}>
-              Photo par click = set me daalo / nikaalo (neela border = set me hai)
+              Click a photo = add to / remove from the set (blue border = in the set)
             </p>
-            {!app.ws.mockups.length && <p className="muted">Abhi koi mockup uploaded nahi — pehle Mockups screen par upload karein, ya set card ke "⬆ Upload new" se.</p>}
+            {!app.ws.mockups.length && <p className="muted">No mockups uploaded yet — upload on the Mockups screen first, or use "⬆ Upload new" on a set card.</p>}
             <div className="vphotos">
               {app.ws.mockups.map((m) => (
                 <span key={m.id} style={{ display: 'inline-block', width: 96, textAlign: 'center' }} title={m.name}>

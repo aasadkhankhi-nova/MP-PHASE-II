@@ -23,13 +23,13 @@ export default function Stores() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🏬 Etsy Stores</h3>
-        <p className="muted">Har store ka apna alag workspace hai — mockups, designs, listings sab store ke andar rehte hain.</p>
+        <p className="muted">Each store has its own separate workspace — mockups, designs and listings all live inside the store.</p>
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && create()}
-            placeholder="Store ka naam (e.g. CanvasArtCo)"
+            placeholder="Store name (e.g. CanvasArtCo)"
             style={{ flex: 1, minWidth: 220 }}
           />
           <button className="btn" onClick={create}>＋ Create store</button>
@@ -52,7 +52,7 @@ export default function Stores() {
             </div>
           </div>
         ))}
-        {!app.stores.length && <div className="card"><p className="muted">Abhi koi store nahi — upar se pehla store banayein.</p></div>}
+        {!app.stores.length && <div className="card"><p className="muted">No stores yet — create your first store above.</p></div>}
       </div>
     </>
   )

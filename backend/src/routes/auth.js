@@ -42,8 +42,8 @@ router.post('/login', async (req, res) => {
 })
 
 // POST /api/auth/refresh { refresh_token } -> { session }
-// Login-token ~1 ghante me expire hota hai; frontend is se chupchap naya
-// token le leta hai — user ko dobara login nahi karna parta.
+// The login token expires after ~1 hour; the frontend quietly gets a new
+// token here, so the user never has to sign in again.
 router.post('/refresh', async (req, res) => {
   try {
     const { refresh_token } = req.body
@@ -87,13 +87,13 @@ router.post('/resend', async (req, res) => {
 router.put('/password', async (req, res) => {
   try {
     const { password, currentPassword, currentEmail } = req.body
-    if (!password || password.length < 6) return res.status(400).json({ ok: false, error: 'password kam az kam 6 harf ka ho' })
+    if (!password || password.length < 6) return res.status(400).json({ ok: false, error: 'Password must be at least 6 characters' })
     const authz = req.headers.authorization || ''
     if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
     // extra safety: if the current password was given, verify it first
     if (currentPassword && currentEmail) {
       const chk = await fetch(gotrue('/token?grant_type=password'), { method: 'POST', headers: headers(), body: JSON.stringify({ email: currentEmail, password: currentPassword }) })
-      if (!chk.ok) return res.status(401).json({ ok: false, error: 'Current password ghalat hai' })
+      if (!chk.ok) return res.status(401).json({ ok: false, error: 'Current password is incorrect' })
     }
     const r = await fetch(gotrue('/user'), {
       method: 'PUT',
@@ -134,9 +134,9 @@ router.put('/email', async (req, res) => {
     const { email, password, currentEmail } = req.body
     const authz = req.headers.authorization || ''
     if (!authz.startsWith('Bearer ')) return res.status(401).json({ ok: false, error: 'login required' })
-    if (!email || !password || !currentEmail) return res.status(400).json({ ok: false, error: 'nayi email aur password dono chahiye' })
+    if (!email || !password || !currentEmail) return res.status(400).json({ ok: false, error: 'Both the new email and your password are required' })
     const chk = await fetch(gotrue('/token?grant_type=password'), { method: 'POST', headers: headers(), body: JSON.stringify({ email: currentEmail, password }) })
-    if (!chk.ok) return res.status(401).json({ ok: false, error: 'Password ghalat hai' })
+    if (!chk.ok) return res.status(401).json({ ok: false, error: 'Password is incorrect' })
     const r = await fetch(gotrue('/user'), { method: 'PUT', headers: { ...headers(), authorization: authz }, body: JSON.stringify({ email }) })
     const j = await r.json()
     if (!r.ok) return res.status(r.status).json({ ok: false, error: j.msg || j.message || 'email change failed' })

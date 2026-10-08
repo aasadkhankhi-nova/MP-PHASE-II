@@ -38,8 +38,8 @@ export default function Listings({ onOpenEtsyListing }) {
     if (L) return <ListingWizard L={L} onBack={() => setOpenId(null)} onOpenEtsyListing={onOpenEtsyListing} />
   }
 
-  // Etsy par ja chuki (draft ya publish) listings yahan NAHI dikhtin —
-  // kaam mukammal, ab wo Etsy Store (Draft/Active status) me milti hain.
+  // listings already sent to Etsy (draft or published) do NOT show here —
+  // the work is done; they now live in Etsy Store (Draft/Active status).
   const pending = app.ws.listings.filter((L) => !L.etsy?.listingId)
   const done = app.ws.listings.filter((L) => !!L.etsy?.listingId)
 
@@ -47,14 +47,14 @@ export default function Listings({ onOpenEtsyListing }) {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🧾 Listings <span className="chip">{pending.length}</span></h3>
-        <p className="muted">Ek listing = designs + mockups ka combo → generated photos + SEO.</p>
+        <p className="muted">A listing = a combo of designs + mockups → generated photos + SEO.</p>
         <button className="btn" onClick={create}>＋ New listing</button>
         {done.length > 0 && (
           <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            ✅ {done.length} listing(s) Etsy par ja chuki hain (Draft/Active status me milengi) — yahan se hat gayin.{' '}
+            ✅ {done.length} listing(s) already sent to Etsy (find them under Draft/Active status) — removed from here.{' '}
             <a className="lnk" style={{ cursor: 'pointer' }}
-              onClick={() => { if (confirm(`${done.length} mukammal record(s) local list se saaf kar dein? (Etsy par listings ko kuch nahi hota)`)) done.forEach((L) => app.delListing(L.id)) }}>
-              🗑 record saaf karein
+              onClick={() => { if (confirm(`${done.length} completed record(s) from the local list? (Nothing happens to the listings on Etsy)`)) done.forEach((L) => app.delListing(L.id)) }}>
+              🗑 Clear records
             </a>
           </p>
         )}
@@ -76,7 +76,7 @@ export default function Listings({ onOpenEtsyListing }) {
           </div>
         ))}
       </div>
-      {!pending.length && <Empty>Abhi koi pending listing nahi.</Empty>}
+      {!pending.length && <Empty>No pending listings.</Empty>}
     </>
   )
 }
@@ -85,16 +85,16 @@ export default function Listings({ onOpenEtsyListing }) {
 function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const app = useApp()
   const [prog, setProg] = useState(null)   // generation progress {i, n, name}
-  const [draftBusy, setDraftBusy] = useState(false)   // Etsy par draft ban rahi hai
-  const [editOut, setEditOut] = useState(null)        // ✎ kaunsi output photo editor me khuli hai
-  const [boxOut, setBoxOut] = useState(null)          // 📦 kaunse mockup ke boxes dobara edit ho rahe hain
-  const [secs, setSecs] = useState(null)              // shop ke sections (live Etsy se)
-  const [secIn, setSecIn] = useState('')              // ＋New section ka naam
+  const [draftBusy, setDraftBusy] = useState(false)   // draft is being created on Etsy
+  const [editOut, setEditOut] = useState(null)        // ✎ which output photo is open in the editor
+  const [boxOut, setBoxOut] = useState(null)          // 📦 which mockup's boxes are being re-edited
+  const [secs, setSecs] = useState(null)              // shop sections (live from Etsy)
+  const [secIn, setSecIn] = useState('')              // ＋New section name
   const [secBusy, setSecBusy] = useState(false)
-  const [regenBusy, setRegenBusy] = useState(null)    // 'title'|'tags'|'description' regen chal raha
+  const [regenBusy, setRegenBusy] = useState(null)    // 'title'|'tags'|'description' regeneration running
   const profiles = getProfiles(app.curStoreId)
   const set = (patch) => app.updListing(L.id, patch)
-  const SEC_MAX = 20   // Etsy rule: har shop me zyada se zyada 20 sections
+  const SEC_MAX = 20   // Etsy rule: max 20 sections per shop
 
   useEffect(() => {
     etsy.sections(app.curStoreId).then((r) => setSecs(r.sections)).catch(() => setSecs([]))
@@ -109,14 +109,14 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
       setSecs([...(secs || []), { id: r.id, title: r.title }])
       await set({ sectionId: String(r.id) })
       setSecIn('')
-    } catch (e) { alert('⚠ Section nahi bana: ' + (e.message || e)) } finally { setSecBusy(false) }
+    } catch (e) { alert('⚠ Section could not be created: ' + (e.message || e)) } finally { setSecBusy(false) }
   }
 
-  // ⟳ REGENERATE — sirf EK field (title/tags/description) dobara. TEXT-ONLY
-  // call: image dobara nahi jati (pehli generate ki vision info use hoti hai)
-  // — is liye tokens na-honay ke barabar (TOKEN-SAVER barqarar).
+  // ⟳ REGENERATE — only ONE field (title/tags/description) again. TEXT-ONLY
+  // call: the image is not resent (vision info from the first generation is reused)
+  // — so it costs almost no tokens (TOKEN-SAVER kept).
   const regen = async (field) => {
-    if (!getGeminiKey()) return alert('API key nahi mili — Settings me AI key dalein')
+    if (!getGeminiKey()) return alert('No API key found — add your AI key in Settings')
     if (!L.seo) return
     setRegenBusy(field)
     try {
@@ -129,8 +129,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     } catch (e) { alert('⚠ ' + (e.message || e)) } finally { setRegenBusy(null) }
   }
 
-  // TOKEN-SAVER: design photo AI ko bhejne se pehle 512px JPEG banti hai
-  // (light designs dark background par, warna white-on-white parh nahi ata)
+  // TOKEN-SAVER: design photos become 512px JPEGs before being sent to the AI
+  // (light designs on a dark background, otherwise white-on-white can't be read)
   const shrink512 = (d) => new Promise((resolve) => {
     const im = new Image()
     im.onload = () => {
@@ -147,8 +147,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     im.src = d.dataUrl
   })
 
-  // Har photo ka apna ALAG alt text — SIRF design se related (AI ki 8 alt
-  // variations photos par bari bari lagti hain). File/mockup names KABHI nahi.
+  // Each photo gets its OWN alt text — related ONLY to the design (the AI's 8 alt
+  // variations are applied to photos in turn). File/mockup names are NEVER used.
   const altFor = (i, kind) => {
     if (kind === 'size') {
       const t = (L.seo?.title || '').split(',')[0].trim() || 'this design'
@@ -156,7 +156,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     }
     const alts = (L.seo?.alts || []).filter(Boolean)
     let base = alts.length ? alts[i % alts.length] : (L.seo?.alt || L.seo?.title || '')
-    // agar variations kam hon aur repeat ho raha ho to design-tag jor kar unique banao
+    // if there are too few variations and they repeat, append a design tag to make them unique
     const tags = L.seo?.tags || []
     if (alts.length && i >= alts.length && tags.length) {
       const t = tags[i % tags.length]
@@ -165,22 +165,22 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     return String(base).trim().slice(0, 250)
   }
 
-  // 5 · FINAL: Etsy par FREE hidden DRAFT banao, phir WOHI asli edit page
-  // kholo jo active listings ka hota hai (100% same — personalization,
-  // variation photos, SKU, sab). Fee sirf Active karne par lagti hai.
+  // 5 · FINAL: create a FREE hidden DRAFT on Etsy, then open THE SAME real edit page
+  // used for active listings (100% the same — personalization,
+  // variation photos, SKU, everything). The fee applies only when made Active.
   const makeDraft = async () => {
     const profile = profiles.find((x) => x.id === L.profileId)
-    if (!profile) return alert('Step 3 me profile chunein')
-    if (!profile.details?.taxonomyId) return alert('Profile me Category set nahi — 🧩 panel se profile edit karein')
-    if (!profile.shipping?.shippingProfileId) return alert('Profile me Shipping profile set nahi — 🧩 panel se profile edit karein')
-    if (!L.seo && !window.confirm('🚀 Generate nahi chala — title/tags/description khali honge (edit page par khud likhne padenge). Phir bhi draft banayein?')) return
-    if (!(L.sku || '').trim() && !window.confirm('SKU khali hai (step 4) — bina SKU ke draft banayein? (Edit page par baad me bhi dal sakte hain)')) return
+    if (!profile) return alert('Choose a profile in step 3')
+    if (!profile.details?.taxonomyId) return alert('No Category set in the profile — edit the profile from the 🧩 panel')
+    if (!profile.shipping?.shippingProfileId) return alert('No Shipping profile set in the profile — edit the profile from the 🧩 panel')
+    if (!L.seo && !window.confirm('🚀 Generate has not run — title/tags/description will be empty (you will have to write them on the edit page). Create the draft anyway?')) return
+    if (!(L.sku || '').trim() && !window.confirm('SKU is empty (step 4) — create the draft without an SKU? (You can add it later on the edit page)')) return
     setDraftBusy(true)
     try {
-      // har photo ka apna ALAG, DESIGN-based alt (AI ki alts variations se)
+      // each photo gets its OWN DESIGN-based alt (from the AI's alt variations)
       const photos = [
         ...(L.outputs || []).map((o, i) => ({ dataUrl: o.dataUrl, alt: altFor(i) })),
-        // profile ki size-chart photos — mockups ke BAAD
+        // the profile's size-chart photos — AFTER the mockups
         ...((profile.photos) || []).map((x, i) => ({ dataUrl: x.dataUrl, alt: altFor(i, 'size') })),
       ]
       const fullDesc = ((L.seo?.description || '').trim() + (profile.desc2 ? '\n\n' + profile.desc2 : '')).trim() || (L.seo?.title || L.name)
@@ -189,19 +189,19 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         description: fullDesc,
         tags: L.seo?.tags || [],
         materials: profile.materials || [],
-        sku: (L.sku || '').trim(),          // step 4 me aapka dala hua SKU
-        state: 'draft',             // hidden + FREE — fee sirf Active par
+        sku: (L.sku || '').trim(),          // the SKU you entered in step 4
+        state: 'draft',             // hidden + FREE — fee only when Active
         images: photos.slice(0, 20).map((p) => ({ dataUrl: p.dataUrl, alt: p.alt })),
         video: L.video || null,
-        // section profile me store nahi hota (aapka rule) — step 4 se yahan lagta hai
+        // the section is not stored in the profile (your rule) — it comes from step 4
         details: { ...(profile.details || {}), sectionId: L.sectionId || undefined },
         shipping: profile.shipping || {},
         priceQty: { price: Number(profile.priceQty?.price) || 1, quantity: Number(profile.priceQty?.quantity) || 999 },
         variations: profile.variations || null,
       })
       await set({ etsy: { listingId: r.id, url: r.url, at: Date.now() } })
-      // upload me kuch fail hua ho (photo/video) to chupao mat — user ko batao
-      if (r.imgErrors?.length) alert(`⚠ Draft ban gayi, lekin ${r.imgErrors.length} item upload nahi ho saka:\n` + r.imgErrors.slice(0, 4).join('\n'))
+      // if any upload failed (photo/video), don't hide it — tell the user
+      if (r.imgErrors?.length) alert(`⚠ Draft created, but ${r.imgErrors.length} item(s) could not be uploaded:\n` + r.imgErrors.slice(0, 4).join('\n'))
       onOpenEtsyListing && onOpenEtsyListing(r.id)
     } catch (e) { alert('⚠ ' + (e.message || e)) } finally { setDraftBusy(false) }
   }
@@ -223,10 +223,10 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
   const createListing = async () => {
     const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
     const mockups = app.ws.mockups.filter((m) => L.mockupIds.includes(m.id))
-    if (!designs.length) return alert('Kam az kam 1 design select karein')
-    if (!mockups.length) return alert('Kam az kam 1 mockup select karein')
+    if (!designs.length) return alert('Select at least 1 design')
+    if (!mockups.length) return alert('Select at least 1 mockup')
     const noBox = mockups.filter((m) => !(m.boxes || []).length)
-    if (noBox.length && !window.confirm(`${noBox.length} mockup(s) me boxes nahi hain — un par design center me lagega. Jari rakhein?`)) return
+    if (noBox.length && !window.confirm(`${noBox.length} mockup(s) have no boxes — the design will be centered on them. Continue?`)) return
 
     // --- part 1: product photos ---
     const r = await runGeneration({ mockups, designs, onProgress: (i, n, name) => setProg({ label: `${i + 1} / ${n} — ${name}` }) })
@@ -236,21 +236,21 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
     // --- part 2: Etsy SEO (needs the user's Gemini key from Settings) ---
     let seoErr = null
     if (getGeminiKey()) {
-      setProg({ label: '✨ SEO ban raha hai…' })
+      setProg({ label: '✨ Generating SEO…' })
       try {
-        // TOKEN-SAVER: 512px JPEG versions bhejte hain, full-size kabhi nahi
+        // TOKEN-SAVER: send 512px JPEG versions, never full size
         const images = (await Promise.all(designs.slice(0, 3).map(shrink512))).filter(Boolean)
         const res = await genSeo({ images, category: L.category || 'Canvas Wall Art', keywords: L.keywords || '' })
         await set({ seo: res.seo })
       } catch (e) { seoErr = String(e.message || e) }
     } else {
-      seoErr = 'API key nahi mili — Settings (apne naam par click) me Gemini key dalein, phir dobara Create listing dabayein.'
+      seoErr = 'No API key found — add your Gemini key in Settings (click your name), then press Create listing again.'
     }
-    // --- part 3: MP4 slideshow video (Phase I wala system) ---
-    // error ab chupta NAHI — vidErr me save ho kar step 4 ke neeche dikhta hai
+    // --- part 3: MP4 slideshow video (the Phase I system) ---
+    // errors are NOT hidden anymore — saved in vidErr and shown below step 4
     let vidErr = null
     try {
-      setProg({ label: '🎬 video ban rahi hai…' })
+      setProg({ label: '🎬 Making video…' })
       const vid = await makeSlideshowVideo((r.outputs || []).slice(0, 6).map((o) => o.dataUrl))
       await set({ video: vid })
     } catch (e) { vidErr = String(e.message || e) }
@@ -268,7 +268,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         </div>
       </div>
 
-      {/* STEP 1: pick designs — chhote tiles (Sets page jaise), click = select */}
+      {/* STEP 1: pick designs — small tiles (like the Sets page), click = select */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>1 · Designs <span className="chip">{L.designIds.length} selected</span></h3>
         <div className="vphotos">
@@ -281,11 +281,11 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
             </span>
           ))}
         </div>
-        {!app.ws.designs.length && <Empty>Pehle Designs screen par designs upload karein.</Empty>}
+        {!app.ws.designs.length && <Empty>Upload designs on the Designs screen first.</Empty>}
       </div>
 
-      {/* STEP 2: pick mockups — set chip = POORA set select/deselect;
-          neeche chhote tiles par click = single mockup apni marzi se */}
+      {/* STEP 2: pick mockups — set chip = select/deselect the WHOLE set;
+          click the small tiles below = pick single mockups */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>2 · Mockups <span className="chip">{L.mockupIds.length} selected</span></h3>
         {app.ws.sets.length > 0 && (
@@ -294,7 +294,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
               const ids = app.ws.mockups.filter((m) => (m.setIds || []).includes(s.id)).map((m) => m.id)
               const allOn = ids.length > 0 && ids.every((id) => L.mockupIds.includes(id))
               return (
-                <button key={s.id} className={'chip clickable' + (allOn ? ' on' : '')} title={allOn ? 'Poora set hatao' : 'Poora set select karo'}
+                <button key={s.id} className={'chip clickable' + (allOn ? ' on' : '')} title={allOn ? 'Remove the whole set' : 'Select the whole set'}
                   onClick={() => togSet(s.id)}>🗂️ {s.name} ({ids.length}){allOn ? ' ✓' : ''}</button>
               )
             })}
@@ -309,29 +309,29 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
             </span>
           ))}
         </div>
-        {!app.ws.mockups.length && <Empty>Pehle Mockups screen par photos upload karein.</Empty>}
+        {!app.ws.mockups.length && <Empty>Upload photos on the Mockups screen first.</Empty>}
       </div>
 
-      {/* STEP 3: PROFILE — details/price/variations/shipping sab isse aayega */}
+      {/* STEP 3: PROFILE — details/price/variations/shipping all come from it */}
       <div className="card">
-        <h3 style={{ marginTop: 0 }}>3 · Profile <span className="chip">{L.profileId && profiles.find((x) => x.id === L.profileId) ? '✓ ' + profiles.find((x) => x.id === L.profileId).name : 'chunein'}</span></h3>
-        <p className="muted" style={{ fontSize: 13 }}>Profile se aayega: materials, Details (category/attributes), price, variations, shipping, aur description ka doosra hissa. (SKU aakhri page par aap khud dalenge.)</p>
+        <h3 style={{ marginTop: 0 }}>3 · Profile <span className="chip">{L.profileId && profiles.find((x) => x.id === L.profileId) ? '✓ ' + profiles.find((x) => x.id === L.profileId).name : 'choose'}</span></h3>
+        <p className="muted" style={{ fontSize: 13 }}>From the profile: materials, Details (category/attributes), price, variations, shipping, and the second part of the description. (You enter the SKU yourself on the last page.)</p>
         <select value={L.profileId || ''} onChange={(e) => set({ profileId: e.target.value })} style={{ minWidth: 240 }}>
           <option value="">⊞ Choose Profile</option>
           {profiles.map((pp) => <option key={pp.id} value={pp.id}>{pp.name}</option>)}
         </select>
-        {!profiles.length && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>Abhi koi profile nahi — kisi Etsy listing ke edit page par ⊞ Save as Profile se banayein.</p>}
+        {!profiles.length && <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>No profiles yet — create one with ⊞ Save as Profile on an Etsy listing's edit page.</p>}
       </div>
 
-      {/* STEP 4: Listing setup — Section + SKU + hints (profile me nahi hote,
-          har listing par alag) */}
+      {/* STEP 4: Listing setup — Section + SKU + hints (not part of the profile,
+          set per listing) */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>4 · Listing setup <span className="chip">section · SKU · hints</span></h3>
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', marginBottom: 10 }}>
           <span>
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>Shop section <span className="opt">Optional</span></label>
             <select value={L.sectionId || ''} onChange={(e) => set({ sectionId: e.target.value })} style={{ minWidth: 200 }}>
-              <option value="">— koi section nahi —</option>
+              <option value="">— no section —</option>
               {(secs || []).map((s) => <option key={s.id} value={s.id}>{s.title}</option>)}
             </select>
             {secs === null && <span className="muted" style={{ fontSize: 11, display: 'block' }}>⏳ sections…</span>}
@@ -340,17 +340,17 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
             <span>
               <label className="muted" style={{ fontSize: 12, display: 'block' }}>＋ Naya section ({secs.length}/{SEC_MAX})</label>
               <span style={{ display: 'flex', gap: 6 }}>
-                <input placeholder="section ka naam" value={secIn} maxLength={24} onChange={(e) => setSecIn(e.target.value)}
+                <input placeholder="section name" value={secIn} maxLength={24} onChange={(e) => setSecIn(e.target.value)}
                   onKeyDown={(e) => e.key === 'Enter' && addSection()} style={{ width: 180 }} />
                 <button className="btn sm ghost" disabled={secBusy || !secIn.trim()} onClick={addSection}>{secBusy ? '⏳' : '＋ Add'}</button>
               </span>
             </span>
           )}
           {secs !== null && secs.length >= SEC_MAX && (
-            <span className="chip">Etsy limit: {SEC_MAX}/{SEC_MAX} sections — naya nahi ban sakta</span>
+            <span className="chip">Etsy limit: {SEC_MAX}/{SEC_MAX} sections — cannot create a new one</span>
           )}
           <span>
-            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU (aap khud dalte hain)</label>
+            <label className="muted" style={{ fontSize: 12, display: 'block' }}>SKU (you enter it yourself)</label>
             <input placeholder="e.g. NCT-307" value={L.sku || ''} onChange={(e) => set({ sku: e.target.value })} style={{ width: 170 }} />
           </span>
         </div>
@@ -363,7 +363,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
       {/* STEP 5: the one big button — photos + SEO + video together */}
       <div className="card">
         <h3 style={{ marginTop: 0 }}>5 · Generate</h3>
-        <p className="muted">Ye button sab karega: {L.mockupIds.length} product photos + AI SEO (title, tags, 300-char description, ALT) + MP4 video.</p>
+        <p className="muted">This button does it all: {L.mockupIds.length} product photos + AI SEO (title, tags, 300-char description, ALT) + MP4 video.</p>
         {prog ? (
           <p className="muted">⏳ {prog.label}</p>
         ) : (
@@ -371,19 +371,19 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         )}
         {L.report && L.report.missed.length > 0 && (
           <p className="muted" style={{ color: 'var(--warn)', marginTop: 10 }}>
-            ⚠ {L.report.missed.length} box(es) ko design nahi mila: {L.report.missed.slice(0, 6).join(' · ')}{L.report.missed.length > 6 ? '…' : ''}
+            ⚠ {L.report.missed.length} box(es) got no design: {L.report.missed.slice(0, 6).join(' · ')}{L.report.missed.length > 6 ? '…' : ''}
           </p>
         )}
         {L.seoErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ SEO: {L.seoErr}</p>}
-        {L.vidErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ Video nahi bani: {L.vidErr}</p>}
-        {L.video && <p className="muted" style={{ color: 'var(--ok, #16a34a)', marginTop: 8 }}>🎬 Video tayar hai — draft ke sath Etsy par chadhegi.</p>}
+        {L.vidErr && <p className="muted" style={{ color: 'var(--warn)', marginTop: 8 }}>⚠ Video could not be made: {L.vidErr}</p>}
+        {L.video && <p className="muted" style={{ color: 'var(--ok, #16a34a)', marginTop: 8 }}>🎬 Video ready — it will be uploaded to Etsy with the draft.</p>}
       </div>
 
       {/* Etsy SEO fields — filled automatically by Create listing; copy into Etsy */}
       {L.seo && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>✨ Etsy SEO <span className="chip ok">ready</span></h3>
-          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>⟳ = SIRF wo field dobara banti hai (text-only call — image dobara nahi jati, tokens na-honay ke barabar).</p>
+          <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>⟳ = regenerates ONLY that field (text-only call — the image is not resent, almost no tokens).</p>
           <SeoField label="Title" value={L.seo.title} onRegen={() => regen('title')} regenBusy={regenBusy === 'title'} />
           <SeoField label="Tags" value={(L.seo.tags || []).join(', ')} onRegen={() => regen('tags')} regenBusy={regenBusy === 'tags'} />
           <SeoField label="Description" value={L.seo.description} multi onRegen={() => regen('description')} regenBusy={regenBusy === 'description'} />
@@ -391,27 +391,27 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         </div>
       )}
 
-      {/* FINAL — Etsy par FREE hidden draft bana kar WOHI asli edit page kholta
-          hai jo active listings ka hota hai. SKU wahan dalein, phir neeche
-          ⇧ Publish (Active ya Draft rehne do). Fee sirf Active par ($0.20). */}
+      {/* FINAL — creates a FREE hidden draft on Etsy and opens THE SAME real edit page
+          used for active listings. Enter the SKU there, then at the bottom
+          ⇧ Publish (Active, or keep as Draft). Fee only for Active ($0.20). */}
       {L.outputs?.length > 0 && (
         <div className="card">
           <h3 style={{ marginTop: 0 }}>6 · Final check & Publish</h3>
           {L.etsy?.listingId ? (
             <>
-              <p className="muted">Ye listing Etsy par ban chuki hai — wohi poora edit page kholein (photos, video, title, tags, details, variations, personalization, shipping — sab wahan).</p>
-              <button className="btn" onClick={() => onOpenEtsyListing && onOpenEtsyListing(L.etsy.listingId)}>📝 Edit page kholein</button>
-              <p className="muted" style={{ marginTop: 8 }}>🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par dekhein</a></p>
+              <p className="muted">This listing already exists on Etsy — open its full edit page (photos, video, title, tags, details, variations, personalization, shipping — everything is there).</p>
+              <button className="btn" onClick={() => onOpenEtsyListing && onOpenEtsyListing(L.etsy.listingId)}>📝 Open edit page</button>
+              <p className="muted" style={{ marginTop: 8 }}>🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">View on Etsy</a></p>
             </>
           ) : (
             <>
               <p className="muted">
-                Ye button Etsy par ek <b>hidden FREE draft</b> banata hai (buyers ko nazar nahi aata, koi fee nahi) aur
-                phir <b>wohi poora edit page</b> kholta hai jo aapki active listings ka hota hai — wahan sab final check
-                karein, SKU dalein, aur neeche <b>⇧ Publish → Active</b> karein ($0.20 fee sirf tab) ya Draft hi rehne dein.
+                This button creates a <b>hidden FREE draft</b> on Etsy (not visible to buyers, no fee) and
+                then opens <b>the same full edit page</b> used for your active listings — do a final check there,
+                enter the SKU, and press <b>⇧ Publish → Active</b> at the bottom ($0.20 fee only then) or keep it as a Draft.
               </p>
               <button className="btn" disabled={draftBusy} onClick={makeDraft}>
-                {draftBusy ? '⏳ Draft ban rahi hai… (photos/video upload — 1–3 min)' : '📝 Draft banao & edit page kholo'}
+                {draftBusy ? '⏳ Creating draft… (uploading photos/video — 1–3 min)' : '📝 Create draft & open edit page'}
               </button>
             </>
           )}
@@ -424,8 +424,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         <div className="card">
           <h3 style={{ marginTop: 0 }}>📦 Outputs <span className="chip ok">{L.outputs.length}</span></h3>
           <p className="muted" style={{ fontSize: 12, marginTop: 0 }}>
-            Draft banane se pehle theek karein: <b>✎ Edit</b> = photo editor (adjust/transform) ·
-            <b> 📦 Boxes</b> = design ki jagah/size/rotation badal kar SIRF ye photo dobara banti hai.
+            Fix things before creating the draft: <b>✎ Edit</b> = photo editor (adjust/transform) ·
+            <b> 📦 Boxes</b> = change the design's position/size/rotation and ONLY this photo is regenerated.
           </p>
           <div className="grid">
             {L.outputs.map((o) => {
@@ -437,7 +437,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
                   <b className="ellip">{o.name}</b>
                   <div style={{ display: 'flex', gap: 5, marginTop: 6, flexWrap: 'wrap' }}>
                     <button className="btn sm ghost" title="Photo editor (adjust/transform)" onClick={() => setEditOut(o.id)}>✎ Edit</button>
-                    {hasMock && <button className="btn sm ghost" title="Design ki jagah badal kar dobara banao" onClick={() => setBoxOut(mockId)}>📦 Boxes</button>}
+                    {hasMock && <button className="btn sm ghost" title="Move the design and regenerate" onClick={() => setBoxOut(mockId)}>📦 Boxes</button>}
                     <a className="btn sm ghost" style={{ textAlign: 'center', textDecoration: 'none' }} href={o.dataUrl} download={o.name + '.jpg'}>⬇</a>
                   </div>
                 </div>
@@ -447,7 +447,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         </div>
       )}
 
-      {/* ✎ — Etsy-style photo editor: output ki photo par halki pulki tabdeeli */}
+      {/* ✎ — Etsy-style photo editor: light touch-ups on an output photo */}
       {editOut && (
         <PhotoEdit
           src={(L.outputs || []).find((o) => o.id === editOut)?.dataUrl}
@@ -456,8 +456,8 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
         />
       )}
 
-      {/* 📦 — boxes dobara set karo; band hote hi SIRF is mockup ki photo naye
-          boxes se dobara ban kar output me lag jati hai */}
+      {/* 📦 — set the boxes again; on close, ONLY this mockup's photo is regenerated
+          with the new boxes and replaces the output */}
       {boxOut && (
         <BoxEditor mockupId={boxOut} onClose={async () => {
           const mid = boxOut
@@ -466,7 +466,7 @@ function ListingWizard({ L, onBack, onOpenEtsyListing }) {
           const designs = app.ws.designs.filter((d) => L.designIds.includes(d.id))
           if (!m || !designs.length) return
           try {
-            setProg({ label: `🔁 ${m.name} dobara ban rahi hai…` })
+            setProg({ label: `🔁 ${m.name} is being regenerated…` })
             const r = await composeMockup(m, designs, {})
             if (r.dataUrl) await set({ outputs: L.outputs.map((o) => (o.id === m.id + '-out' ? { ...o, dataUrl: r.dataUrl } : o)) })
           } finally { setProg(null) }
@@ -485,7 +485,7 @@ function SeoField({ label, value, multi, onRegen, regenBusy }) {
         <span className="muted" style={{ fontWeight: 600 }}>{label}</span>
         <span style={{ display: 'flex', gap: 6 }}>
           {onRegen && (
-            <button className="btn sm ghost" disabled={regenBusy} title={`Sirf ${label} dobara banao`} onClick={onRegen}>
+            <button className="btn sm ghost" disabled={regenBusy} title={`Regenerate only the ${label}`} onClick={onRegen}>
               {regenBusy ? '⏳' : '⟳'}
             </button>
           )}
@@ -550,9 +550,9 @@ function EtsyPublish({ L, onSaved }) {
   const send = async () => {
     setMsg(null); setBusy(true)
     try {
-      if (!price) throw new Error('Price likhein')
-      if (!taxoId) throw new Error('Category chunein (search kar ke list me se click karein)')
-      if (!profileId) throw new Error('Shipping profile chunein')
+      if (!price) throw new Error('Please enter a price')
+      if (!taxoId) throw new Error('Choose a category (search, then click one in the list)')
+      if (!profileId) throw new Error('Choose a shipping profile')
       const r = await etsy.publish({
         storeId: app.curStoreId,
         title: L.seo?.title || L.name,
@@ -565,7 +565,7 @@ function EtsyPublish({ L, onSaved }) {
         images: (L.outputs || []).slice(0, 10).map((o) => o.dataUrl),
       })
       await onSaved({ etsy: { listingId: r.listingId, url: r.url, at: Date.now() }, price, qty })
-      setMsg(`✅ Draft ban gaya! ${r.uploaded} photos upload huin.` + (r.imgErrors?.length ? ` (⚠ ${r.imgErrors.length} photo fail)` : ''))
+      setMsg(`✅ Draft created! ${r.uploaded} photos uploaded.` + (r.imgErrors?.length ? ` (⚠ ${r.imgErrors.length} photo fail)` : ''))
     } catch (e) {
       setMsg('⚠ ' + (e.message || e))
     } finally { setBusy(false) }
@@ -577,10 +577,10 @@ function EtsyPublish({ L, onSaved }) {
     <div className="card">
       <h3 style={{ marginTop: 0 }}>📤 Send to Etsy</h3>
       {!st.connected ? (
-        <p className="muted">Is store ki Etsy shop connect nahi hai — Settings (apne naam par click) me 🛍️ Etsy section se connect karein.</p>
+        <p className="muted">This store's Etsy shop is not connected — connect it from the 🛍️ Etsy section in Settings (click your name).</p>
       ) : (
         <>
-          <p className="muted">Draft listing banegi <b>{st.shop?.shop_name}</b> par — publish aap Etsy par khud karenge (Etsy ki $0.20 listing fee publish par lagti hai).</p>
+          <p className="muted">A draft listing will be created on <b>{st.shop?.shop_name}</b> — you publish it yourself on Etsy (Etsy's $0.20 listing fee applies on publish).</p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
             <input placeholder="Price (USD)" type="number" min="0" step="0.01" value={price} onChange={(e) => setPrice(e.target.value)} style={{ width: 130 }} />
             <input placeholder="Quantity" type="number" min="1" value={qty} onChange={(e) => setQty(e.target.value)} style={{ width: 110 }} />
@@ -606,10 +606,10 @@ function EtsyPublish({ L, onSaved }) {
               ))}
             </div>
           )}
-          <button className="btn" disabled={busy} onClick={send}>{busy ? '⏳ Bhej raha hai…' : '📤 Send to Etsy (draft)'}</button>
+          <button className="btn" disabled={busy} onClick={send}>{busy ? '⏳ Sending…' : '📤 Send to Etsy (draft)'}</button>
           {L.etsy?.url && (
             <p className="muted" style={{ marginTop: 8 }}>
-              🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Etsy par draft kholein</a>
+              🔗 <a className="lnk" href={L.etsy.url} target="_blank" rel="noreferrer">Open draft on Etsy</a>
             </p>
           )}
         </>

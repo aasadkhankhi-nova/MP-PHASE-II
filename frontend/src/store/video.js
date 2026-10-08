@@ -1,13 +1,13 @@
 /**
- * video.js — listing ki MP4 slideshow video (MP Phase I wala system).
- * Generated photos ko 1080x1080 par bari bari dikha kar MP4 banti hai.
+ * video.js — MP4 slideshow video for a listing (the MP Phase I system).
+ * Shows the generated photos one by one at 1080x1080 and builds an MP4.
  *
- * PLAN A (naya, reliable): WebCodecs VideoEncoder (H.264) + mp4-muxer —
- *   proper MP4 file banti hai, sahi duration ke sath. Chrome/Edge sab me hai.
- * PLAN B (fallback): purana MediaRecorder tareeqa (jin browsers me WebCodecs
- *   nahi ya H.264 encode support nahi).
- * Dono fail hon to Error throw hota hai (wizard user ko wajah dikhata hai) —
- * pehle chupke se null ho jata tha aur video ghayab rehti thi.
+ * PLAN A (new, reliable): WebCodecs VideoEncoder (H.264) + mp4-muxer —
+ *   produces a proper MP4 file with the correct duration. Available in Chrome/Edge.
+ * PLAN B (fallback): the old MediaRecorder method (for browsers without WebCodecs
+ *   or without H.264 encode support).
+ * If both fail an Error is thrown (the wizard shows the user why) —
+ * previously it silently returned null and the video went missing.
  */
 import { Muxer, ArrayBufferTarget } from './mp4muxer.js'
 
@@ -32,9 +32,9 @@ function drawCover(ctx, im, size) {
 
 // ---- PLAN A: WebCodecs + mp4-muxer ----
 async function encodeWebCodecs(imgs, { per, size }) {
-  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') throw new Error('WebCodecs nahi')
+  if (typeof VideoEncoder === 'undefined' || typeof VideoFrame === 'undefined') throw new Error('WebCodecs not available')
   const fps = 30
-  // H.264 codec — pehla supported profile chunein (baseline pehle: sab jagah chalta hai)
+  // H.264 codec — pick the first supported profile (baseline first: works everywhere)
   const CODECS = ['avc1.420028', 'avc1.42E028', 'avc1.640028', 'avc1.42001f']
   let codec = null
   for (const c of CODECS) {
@@ -43,12 +43,12 @@ async function encodeWebCodecs(imgs, { per, size }) {
       if (s.supported) { codec = c; break }
     } catch {}
   }
-  if (!codec) throw new Error('H.264 encode support nahi')
+  if (!codec) throw new Error('H.264 encoding not supported')
 
   const muxer = new Muxer({
     target: new ArrayBufferTarget(),
     video: { codec: 'avc', width: size, height: size },
-    fastStart: 'in-memory',   // moov aage — streaming/preview ke liye behtar
+    fastStart: 'in-memory',   // moov first — better for streaming/preview
   })
   let encErr = null
   const enc = new VideoEncoder({
@@ -84,7 +84,7 @@ async function encodeWebCodecs(imgs, { per, size }) {
   return await blobToDataUrl(blob)
 }
 
-// ---- PLAN B: purana MediaRecorder tareeqa ----
+// ---- PLAN B: old MediaRecorder method ----
 async function encodeMediaRecorder(imgs, { per, size }) {
   const CAND = [
     'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
@@ -92,7 +92,7 @@ async function encodeMediaRecorder(imgs, { per, size }) {
     'video/mp4',
   ]
   const mime = typeof MediaRecorder !== 'undefined' && CAND.find((m) => MediaRecorder.isTypeSupported(m))
-  if (!mime) throw new Error('browser MP4 recording support nahi karta')
+  if (!mime) throw new Error('This browser does not support MP4 recording')
 
   const c = document.createElement('canvas')
   c.width = size; c.height = size
@@ -111,7 +111,7 @@ async function encodeMediaRecorder(imgs, { per, size }) {
       await new Promise((r) => setTimeout(r, 33))
     }
   }
-  // aakhri frame thora hold + bacha data
+  // hold the last frame briefly + flush remaining data
   await new Promise((r) => setTimeout(r, 250))
   try { rec.requestData() } catch {}
   rec.stop()
@@ -123,7 +123,7 @@ async function encodeMediaRecorder(imgs, { per, size }) {
 
 export async function makeSlideshowVideo(dataUrls, { per = 1.1, size = 1080, max = 6 } = {}) {
   const imgs = await loadImgs(dataUrls, max)
-  if (!imgs.length) throw new Error('video ke liye koi photo nahi mili')
+  if (!imgs.length) throw new Error('No photos found for the video')
   try {
     return await encodeWebCodecs(imgs, { per, size })
   } catch (e) {

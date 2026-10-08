@@ -59,9 +59,9 @@ const makeVerifier = () => b64url(crypto.randomBytes(32))
 const challengeOf = (v) => b64url(crypto.createHash('sha256').update(v).digest())
 
 // The OAuth "state" survives the round-trip to Etsy in the DATABASE —
-// pehle in-memory Map thi, lekin Render free server deploy/neend par restart
-// hota hai aur beech ki OAuth toot jati thi ("Session expire"). DB me 10-min
-// TTL ke sath rakhne se restart ke aar-paar bhi connect mukammal hota hai.
+// it used to be an in-memory Map, but the free Render server restarts on deploy/sleep
+// and an in-flight OAuth broke ("Session expired"). Keeping it in the DB with a 10-min
+// TTL lets the connect finish even across a restart.
 let stTableReady = false
 async function ensureStateTable() {
   if (stTableReady) return
@@ -107,12 +107,12 @@ async function takeCreateSlot(storeId) {
   const rows = await q('select at from etsy_create_log where store_id=$1 order by at desc', [storeId])
   if (rows.length && now - Number(rows[0].at) < CREATE_MIN_GAP_MS) {
     const s = Math.ceil((CREATE_MIN_GAP_MS - (now - Number(rows[0].at))) / 1000)
-    return `Thora ruk jayein — agli listing ${s} second baad ban sakti hai`
+    return `Please wait — the next listing can be created in ${s} seconds`
   }
   if (rows.length >= CREATE_LIMIT_PER_HOUR) {
     const oldest = Number(rows[rows.length - 1].at)
     const m = Math.ceil((oldest + 60 * 60 * 1000 - now) / 60000)
-    return `Is store ki ek ghante ki had (${CREATE_LIMIT_PER_HOUR} listings) poori ho gayi — ${m} minute baad dobara koshish karein`
+    return `This store reached its hourly limit (${CREATE_LIMIT_PER_HOUR} listings) — please try again in ${m} minutes`
   }
   await q('insert into etsy_create_log (store_id, at) values ($1,$2)', [storeId, now])
   return null
@@ -147,8 +147,8 @@ async function getConn(storeId) {
 }
 
 // One call to Etsy's API with the right headers. Throws on error.
-// Etsy ki had 5 requests/second hai — edit page ke sab sections ek saath load
-// hone par 429 aa sakta hai, is liye 429 par ruk kar KHUD retry karte hain.
+// Etsy allows 5 requests/second — when all edit-page sections load at once
+// a 429 can happen, so on a 429 we wait and retry AUTOMATICALLY.
 async function etsy(conn, path, opts = {}) {
   let j = {}
   for (let att = 0; att < 4; att++) {
@@ -161,7 +161,7 @@ async function etsy(conn, path, opts = {}) {
         ...(opts.headers || {}),
       },
     })
-    if (res.status === 429) {                       // rate limit — thora ruk kar dobara
+    if (res.status === 429) {                       // rate limit — wait a bit and retry
       await new Promise((r) => setTimeout(r, 1100 + att * 900))
       continue
     }
@@ -169,7 +169,7 @@ async function etsy(conn, path, opts = {}) {
     if (!res.ok) throw Object.assign(new Error(j.error || `Etsy HTTP ${res.status}`), { status: res.status })
     return j
   }
-  throw Object.assign(new Error('Etsy rate limit — page refresh kar ke dobara koshish karein'), { status: 429 })
+  throw Object.assign(new Error('Etsy rate limit — refresh the page and try again'), { status: 429 })
 }
 
 // Build a form-encoded body the way Etsy's write endpoints expect:
@@ -189,7 +189,7 @@ function form(obj) {
 // Returns the Etsy permission-page URL; the frontend sends the browser there.
 router.get('/connect', requireUser, async (req, res) => {
   try {
-    if (!key()) return res.status(503).json({ ok: false, error: 'ETSY_API_KEY server par set nahi hai' })
+    if (!key()) return res.status(503).json({ ok: false, error: 'ETSY_API_KEY is not set on the server' })
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const verifier = makeVerifier()
@@ -213,7 +213,7 @@ router.get('/callback', async (req, res) => {
     const { code, state, error, error_description } = req.query
     if (error) return back('error:' + (error_description || error))
     const st = await takeState(state)
-    if (!st || st.exp < Date.now()) return back('error:Session expire ho gayi — dobara Connect dabayein')
+    if (!st || st.exp < Date.now()) return back('error:Session expired — press Connect again')
 
     // code -> tokens
     const tr = await fetch('https://api.etsy.com/v3/public/oauth/token', {
@@ -231,7 +231,7 @@ router.get('/callback', async (req, res) => {
     // find the user's shop (id + name)
     const shopRes = await etsy(conn, `/users/${etsyUserId}/shops`)
     const shop = shopRes.shop_id ? shopRes : (shopRes.results && shopRes.results[0])
-    if (!shop) return back('error:Is Etsy account par koi shop nahi mili')
+    if (!shop) return back('error:No shop found on this Etsy account')
 
     const expiresAt = new Date(Date.now() + (tok.expires_in || 3600) * 1000)
     // save (or replace) this store's connection
@@ -281,7 +281,7 @@ router.get('/shipping-profiles', requireUser, async (req, res) => {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/shipping-profiles`)
     res.json({ ok: true, profiles: (r.results || []).map((p) => ({ id: p.shipping_profile_id, title: p.title })) })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -306,7 +306,7 @@ async function ensureTaxo() {
     }
   }
   walk(j.results, '')
-  // slim tree (id/name/children hi) — Category cascade-dropdowns ke liye
+  // slim tree (id/name/children only) — for the Category cascade dropdowns
   const slim = (nodes) => (nodes || []).map((n) => ({ id: n.id, name: n.name, children: slim(n.children) }))
   TAXO = { at: Date.now(), flat, tree: slim(j.results || []) }
 }
@@ -320,36 +320,36 @@ router.get('/taxonomy', requireUser, async (req, res) => {
 })
 
 // GET /api/etsy/taxonomy/tree
-// PURA category tree (Etsy ke apne Category dropdowns jaisa cascade banane ke liye).
+// FULL category tree (to build a cascade like Etsy's own Category dropdowns).
 router.get('/taxonomy/tree', requireUser, async (req, res) => {
   try { await ensureTaxo(); res.json({ ok: true, tree: TAXO.tree }) }
   catch (e) { res.status(500).json({ ok: false, error: e.message }) }
 })
 
 // ---------- CREATE helpers: section / return policy / shipping profile ----------
-// (Processing profiles aur production partners Etsy par hi bante hain — API nahi deti.)
+// (Processing profiles and production partners are created on Etsy only — the API doesn't support it.)
 
 // POST /api/etsy/section/create { storeId, title }
 router.post('/section/create', requireUser, async (req, res) => {
   try {
     const { storeId, title } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
-    if (!String(title || '').trim()) return res.status(400).json({ ok: false, error: 'section ka naam chahiye' })
+    if (!String(title || '').trim()) return res.status(400).json({ ok: false, error: 'Section name is required' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/sections`, { method: 'POST', body: form({ title: String(title).trim().slice(0, 24) }) })
     res.json({ ok: true, id: r.shop_section_id, title: r.title })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
 // POST /api/etsy/return-policy/create { storeId, acceptsReturns, acceptsExchanges, deadline }
-// deadline (days) sirf tab jab returns/exchanges accept hon — Etsy: 7/14/21/30/45/60/90.
+// deadline (days) only when returns/exchanges are accepted — Etsy: 7/14/21/30/45/60/90.
 router.post('/return-policy/create', requireUser, async (req, res) => {
   try {
     const { storeId, acceptsReturns, acceptsExchanges, deadline } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const body = { accepts_returns: acceptsReturns ? 'true' : 'false', accepts_exchanges: acceptsExchanges ? 'true' : 'false' }
     if (acceptsReturns || acceptsExchanges) body.return_deadline = Number(deadline) || 30
     const r = await etsy(conn, `/shops/${conn.shop_id}/policies/return`, { method: 'POST', body: form(body) })
@@ -360,14 +360,14 @@ router.post('/return-policy/create', requireUser, async (req, res) => {
 // POST /api/etsy/shipping-profile/create
 // { storeId, title, originCountry, originZip, minProcessing, maxProcessing,
 //   primaryCost, secondaryCost, minDelivery, maxDelivery }
-// Ek "Everywhere" destination ke saath profile banta hai — details Etsy par edit ho sakti hain.
+// Creates a profile with one "Everywhere" destination — details can be edited on Etsy.
 router.post('/shipping-profile/create', requireUser, async (req, res) => {
   try {
     const { storeId, title, originCountry, originZip, minProcessing, maxProcessing, primaryCost, secondaryCost, minDelivery, maxDelivery } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
-    if (!String(title || '').trim() || !originCountry) return res.status(400).json({ ok: false, error: 'title aur origin country chahiye' })
+    if (!String(title || '').trim() || !originCountry) return res.status(400).json({ ok: false, error: 'Title and origin country are required' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const body = {
       title: String(title).trim(),
       origin_country_iso: String(originCountry).toUpperCase(),
@@ -386,17 +386,17 @@ router.post('/shipping-profile/create', requireUser, async (req, res) => {
 })
 
 // GET /api/etsy/readiness?storeId=...
-// Shop ke PROCESSING profiles (Etsy "readiness states" — e.g. Made to order: 1-2 days).
-// Ye Etsy par bante hain; API se sirf list milti hai (create ka endpoint nahi hai).
+// The shop's PROCESSING profiles (Etsy "readiness states" — e.g. Made to order: 1-2 days).
+// These are created on Etsy; the API only lists them (there is no create endpoint).
 router.get('/readiness', requireUser, async (req, res) => {
   try {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/readiness-state-definitions`)
     const list = r.results || r.readiness_state_definitions || []
-    // "made_to_order" -> "Made to order: 1–2 days" (Etsy/Vela jaisa label)
+    // "made_to_order" -> "Made to order: 1–2 days" (Etsy/Vela-style label)
     const pretty = (x) => {
       const base = String(x.readiness_state || x.description || 'Processing').replace(/_/g, ' ').replace(/^\w/, (c) => c.toUpperCase())
       const range = x.min_processing_time ? `: ${x.min_processing_time}–${x.max_processing_time} ${x.processing_time_unit || 'days'}` : ''
@@ -410,19 +410,19 @@ router.get('/readiness', requireUser, async (req, res) => {
       })).filter((x) => x.id),
     })
   } catch (e) {
-    // purane shops par ye endpoint na ho to editor phir bhi chale
+    // if older shops lack this endpoint, the editor still works
     res.json({ ok: true, states: [] })
   }
 })
 
 // GET /api/etsy/partners?storeId=...
-// Shop ke production partners (Etsy → Settings → Production partners wale).
+// The shop's production partners (from Etsy → Settings → Production partners).
 router.get('/partners', requireUser, async (req, res) => {
   try {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/production-partners`)
     res.json({ ok: true, partners: (r.results || []).map((p) => ({ id: p.production_partner_id, name: p.partner_name, location: p.location || '' })) })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -439,9 +439,9 @@ router.post('/publish', requireUser, async (req, res) => {
     const { storeId, title, description, tags = [], price, quantity = 1, taxonomyId, shippingProfileId, images = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     if (!title || !price || !taxonomyId || !shippingProfileId) {
-      return res.status(400).json({ ok: false, error: 'title, price, category aur shipping profile lazmi hain' })
+      return res.status(400).json({ ok: false, error: 'Title, price, category and shipping profile are required' })
     }
 
     const wait = await takeCreateSlot(storeId)
@@ -513,7 +513,7 @@ router.get('/listings', requireUser, async (req, res) => {
     const offset = Math.max(0, parseInt(req.query.offset) || 0)
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/listings?state=${encodeURIComponent(state)}&limit=${limit}&offset=${offset}&includes=Images`)
     res.json({
       ok: true,
@@ -541,7 +541,7 @@ router.get('/counts', requireUser, async (req, res) => {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const states = ['active', 'draft', 'expired', 'inactive', 'sold_out']
     const counts = {}
     for (const st of states) {
@@ -560,7 +560,7 @@ router.get('/listing', requireUser, async (req, res) => {
     const { storeId, id } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images,Videos`)
     // current attribute values (Sleeve length: Short sleeve, ...) — best-effort
     let props = []
@@ -586,8 +586,8 @@ router.get('/listing', requireUser, async (req, res) => {
         images: (l.images || []).map((im) => ({
           id: im.listing_image_id,
           url: im.url_570xN || im.url_fullxfull,
-          full: im.url_fullxfull || im.url_570xN || null,   // download ke liye
-          alt: im.alt_text || '',                            // ⚠ warning jab khali ho
+          full: im.url_fullxfull || im.url_570xN || null,   // for download
+          alt: im.alt_text || '',                            // ⚠ warning when empty
         })).filter((x) => x.url),
         video: l.videos?.[0] ? { id: l.videos[0].video_id, url: l.videos[0].video_url, thumb: l.videos[0].thumbnail_url } : null,
         personalization: { enabled: !!l.is_personalizable, required: !!l.personalization_is_required, instructions: l.personalization_instructions || '', charMax: l.personalization_char_count_max || null },
@@ -625,7 +625,7 @@ router.get('/sections', requireUser, async (req, res) => {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/sections`)
     res.json({ ok: true, sections: (r.results || []).map((x) => ({ id: x.shop_section_id, title: x.title })) })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -641,7 +641,7 @@ router.post('/listing/update', requireUser, async (req, res) => {
     const { storeId, id, patch = {} } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const body = {}
     if (patch.title !== undefined) body.title = String(patch.title).slice(0, 140)
     if (patch.description !== undefined) body.description = String(patch.description)
@@ -670,7 +670,7 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.persRequired !== undefined) body.personalization_is_required = patch.persRequired ? 'true' : 'false'
     if (patch.persInstructions !== undefined) body.personalization_instructions = String(patch.persInstructions).slice(0, 1024)
     if (patch.persCharMax !== undefined && patch.persCharMax) body.personalization_char_count_max = Number(patch.persCharMax)
-    if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'kuch badla hi nahi' })
+    if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'Nothing changed' })
     const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form(body) })
     res.json({ ok: true, title: l.title })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -685,7 +685,7 @@ router.post('/listing/update', requireUser, async (req, res) => {
 router.get('/properties', requireUser, async (req, res) => {
   try {
     const { taxonomyId } = req.query
-    if (!taxonomyId) return res.status(400).json({ ok: false, error: 'taxonomyId chahiye' })
+    if (!taxonomyId) return res.status(400).json({ ok: false, error: 'taxonomyId is required' })
     const r = await fetch(`https://api.etsy.com/v3/application/seller-taxonomy/nodes/${encodeURIComponent(taxonomyId)}/properties`, { headers: { 'x-api-key': apiKeyHdr() } })
     const j = await r.json()
     if (!r.ok) throw new Error(j.error || 'properties fetch failed')
@@ -709,7 +709,7 @@ router.post('/listing/property', requireUser, async (req, res) => {
     const { storeId, id, propertyId, valueIds = [], values = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     if (!valueIds.length) {
       // empty selection = remove the attribute from the listing
       await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/properties/${encodeURIComponent(propertyId)}`, { method: 'DELETE' })
@@ -729,7 +729,7 @@ router.get('/return-policies', requireUser, async (req, res) => {
     const { storeId } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/policies/return`)
     res.json({
       ok: true,
@@ -743,7 +743,7 @@ router.get('/return-policies', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
-// GET /api/etsy/enums — who_made / when_made ke CURRENT allowed values.
+// GET /api/etsy/enums — CURRENT allowed values for who_made / when_made.
 // We read them from Etsy's own machine-readable spec (cached 24h) so the
 // dropdowns never go stale when Etsy renames an era (e.g. 2020_2026).
 let ENUMS = { at: 0, whoMade: [], whenMade: [] }
@@ -785,7 +785,7 @@ router.get('/inventory', requireUser, async (req, res) => {
     const { storeId, id } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`)
     res.json({
       ok: true,
@@ -801,8 +801,8 @@ router.get('/inventory', requireUser, async (req, res) => {
         price: money(p.offerings?.[0]?.price),
         quantity: p.offerings?.[0]?.quantity ?? 0,
         enabled: !!p.offerings?.[0]?.is_enabled,
-        // Etsy (Oct 2025 se): physical listings ke har offering par readiness_state_id
-        // zaruri hai — isay save par WAPAS bhejna parta hai warna Etsy reject karta hai
+        // Etsy (since Oct 2025): every offering of a physical listing needs readiness_state_id
+        // — it must be sent BACK on save, otherwise Etsy rejects it
         readinessStateId: p.offerings?.[0]?.readiness_state_id || null,
       })),
     })
@@ -819,8 +819,8 @@ router.post('/inventory/update', requireUser, async (req, res) => {
     const { storeId, id, priceOnProperty = [], quantityOnProperty = [], skuOnProperty = [], products = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
-    if (!products.length) return res.status(400).json({ ok: false, error: 'products khali hain' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
+    if (!products.length) return res.status(400).json({ ok: false, error: 'Products list is empty' })
     const body = {
       products: products.map((p) => ({
         sku: p.sku || '',
@@ -841,7 +841,7 @@ router.post('/inventory/update', requireUser, async (req, res) => {
 })
 
 // POST /api/etsy/listing/create-full { storeId, data }
-// LAUNCHPAD ka final Publish: Etsy par is se PEHLE kuch nahi jata.
+// LAUNCHPAD's final Publish: nothing is sent to Etsy BEFORE this.
 // data = { title, description, tags[], materials[], sku, state ('draft'|'active'),
 //   images: [{dataUrl, alt}], video (dataUrl|null),
 //   details: { whoMade, whenMade, isSupply, taxonomyId, sectionId, autoRenew,
@@ -854,13 +854,13 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
     const { storeId, data } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const d = data || {}
     const det = d.details || {}
     const sh = d.shipping || {}
-    if (!d.title) return res.status(400).json({ ok: false, error: 'Title chahiye' })
-    if (!det.taxonomyId) return res.status(400).json({ ok: false, error: 'Profile me Category (Details) set nahi hai — pehle profile me category set karein' })
-    if (!sh.shippingProfileId) return res.status(400).json({ ok: false, error: 'Profile me Shipping profile set nahi hai' })
+    if (!d.title) return res.status(400).json({ ok: false, error: 'Title is required' })
+    if (!det.taxonomyId) return res.status(400).json({ ok: false, error: 'No Category (Details) set in the profile — set a category in the profile first' })
+    if (!sh.shippingProfileId) return res.status(400).json({ ok: false, error: 'No Shipping profile set in the profile' })
 
     const wait = await takeCreateSlot(storeId)
     if (wait) return res.status(429).json({ ok: false, error: wait })
@@ -884,7 +884,7 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
     if (det.isSupply) draft.is_supply = 'true'
     const nl = await etsy(conn, `/shops/${conn.shop_id}/listings`, { method: 'POST', body: form(draft) })
 
-    // 2) photos (alt text ke saath)
+    // 2) photos (with alt text)
     let uploaded = 0
     const imgErrors = []
     for (const im of (d.images || []).slice(0, 20)) {
@@ -914,7 +914,7 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
       try { await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}`, { method: 'PATCH', body: form(patch) }) } catch {}
     }
 
-    // 4) attributes (profile se)
+    // 4) attributes (from the profile)
     for (const [pid, v] of Object.entries(det.attrs || {})) {
       const ids = (v?.ids || []).map(Number).filter(Boolean)
       if (!ids.length) continue
@@ -925,7 +925,7 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
       } catch {}
     }
 
-    // 5) inventory: variations (profile se) ya single — SKU user wala har jagah
+    // 5) inventory: variations (from the profile) or single — the user's SKU everywhere
     try {
       const ready = sh.readinessStateId ? { readiness_state_id: Number(sh.readinessStateId) } : {}
       if (d.variations?.products?.length) {
@@ -957,7 +957,7 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
       } catch (e) { imgErrors.push('video: ' + e.message) }
     }
 
-    // 7) state: user ne Active dabaya to live, warna draft hi rehta hai
+    // 7) state: live if the user pressed Active, otherwise it stays a draft
     let stateErr = null
     if (d.state === 'active') {
       try { await etsy(conn, `/shops/${conn.shop_id}/listings/${nl.listing_id}`, { method: 'PATCH', body: form({ state: 'active' }) }) }
@@ -970,19 +970,19 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
 })
 
 // POST /api/etsy/listing/copy { storeId, id }
-// Vela jaisa COPY: listing ki puri nakal ek naye DRAFT ke tor par —
-// fields + photos (CDN se utha kar dobara upload) + variations + personalization.
+// Vela-style COPY: a full copy of the listing as a new DRAFT —
+// fields + photos (taken from the CDN and re-uploaded) + variations + personalization.
 router.post('/listing/copy', requireUser, async (req, res) => {
   try {
     const { storeId, id } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
 
     const wait = await takeCreateSlot(storeId)
     if (wait) return res.status(429).json({ ok: false, error: wait })
     const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
-    // 1) naya draft — core fields ke saath
+    // 1) new draft — with the core fields
     const draft = {
       quantity: l.quantity || 1,
       title: l.title,
@@ -1001,7 +1001,7 @@ router.post('/listing/copy', requireUser, async (req, res) => {
     if (l.is_supply) draft.is_supply = 'true'
     const nl = await etsy(conn, `/shops/${conn.shop_id}/listings`, { method: 'POST', body: form(draft) })
 
-    // 2) photos: CDN se download kar ke naye draft par upload (order preserved)
+    // 2) photos: download from the CDN and upload to the new draft (order preserved)
     let photos = 0
     for (const im of (l.images || []).slice(0, 20)) {
       try {
@@ -1019,7 +1019,7 @@ router.post('/listing/copy', requireUser, async (req, res) => {
       } catch {}
     }
 
-    // 3) variations (agar hain) — inventory ki nakal
+    // 3) variations (if any) — copy the inventory
     try {
       const inv = await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`)
       const hasVars = (inv.products || []).length > 1 || (inv.products?.[0]?.property_values || []).length
@@ -1050,7 +1050,7 @@ router.post('/listing/copy', requireUser, async (req, res) => {
       }
     } catch {}
 
-    // 4) personalization ki nakal (naya multi-question system)
+    // 4) copy personalization (new multi-question system)
     try {
       const pr = await etsy(conn, `/listings/${encodeURIComponent(id)}/personalization`)
       const qs = pr.personalization_questions || pr.results || []
@@ -1065,9 +1065,9 @@ router.post('/listing/copy', requireUser, async (req, res) => {
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
 
-// ---------- Personalization (Etsy ka NAYA multi-question system) ----------
-// 5 questions tak: text_input / dropdown / unlabeled_upload (photo!) / labeled_upload
-// + optional text questions par add_on_price ($0.20–$500).
+// ---------- Personalization (Etsy's NEW multi-question system) ----------
+// up to 5 questions: text_input / dropdown / unlabeled_upload (photo!) / labeled_upload
+// + add_on_price on optional text questions ($0.20–$500).
 
 // GET /api/etsy/personalization?storeId=...&id=...
 router.get('/personalization', requireUser, async (req, res) => {
@@ -1075,7 +1075,7 @@ router.get('/personalization', requireUser, async (req, res) => {
     const { storeId, id } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/listings/${encodeURIComponent(id)}/personalization`)
     const list = r.personalization_questions || r.results || []
     res.json({
@@ -1096,13 +1096,13 @@ router.get('/personalization', requireUser, async (req, res) => {
 })
 
 // POST /api/etsy/personalization { storeId, id, questions: [...] }
-// REPLACES the listing's personalization questions (Etsy ka naya endpoint).
+// REPLACES the listing's personalization questions (Etsy's new endpoint).
 router.post('/personalization', requireUser, async (req, res) => {
   try {
     const { storeId, id, questions = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const body = {
       personalization_questions: questions.slice(0, 5).map((q) => {
         const o = { question_type: q.type, question_text: String(q.text || '').slice(0, 45), required: !!q.required }
@@ -1126,13 +1126,13 @@ router.post('/personalization', requireUser, async (req, res) => {
 })
 
 // GET /api/etsy/varimages?storeId=...&id=...
-// Kis variation-option par kaunsi photo linki hui hai (buyer option chune to wahi dikhe).
+// Which photo is linked to which variation option (shown when the buyer picks that option).
 router.get('/varimages', requireUser, async (req, res) => {
   try {
     const { storeId, id } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const r = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/variation-images`)
     res.json({ ok: true, links: (r.results || []).map((x) => ({ propertyId: x.property_id, valueId: x.value_id, imageId: x.image_id })) })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -1145,7 +1145,7 @@ router.post('/varimages', requireUser, async (req, res) => {
     const { storeId, id, links = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const body = { variation_images: links.map((l) => ({ property_id: Number(l.propertyId), value_id: Number(l.valueId), image_id: Number(l.imageId) })) }
     await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/variation-images`, { method: 'POST', body: JSON.stringify(body) })
     res.json({ ok: true })
@@ -1162,13 +1162,13 @@ function fromDataUrl(dataUrl) {
 }
 
 // POST /api/etsy/listing/image { storeId, id, dataUrl, rank, alt }
-// Upload ONE new photo to the listing (Etsy: max 20 photos per listing, Aug 2025 se).
+// Upload ONE new photo to the listing (Etsy: max 20 photos per listing, since Aug 2025).
 router.post('/listing/image', requireUser, async (req, res) => {
   try {
     const { storeId, id, dataUrl, rank, alt } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const { bytes, mime } = fromDataUrl(dataUrl)
     const fd = new FormData()
     fd.append('image', new Blob([bytes], { type: mime }), `photo.${mime.includes('png') ? 'png' : 'jpg'}`)
@@ -1180,14 +1180,14 @@ router.post('/listing/image', requireUser, async (req, res) => {
 })
 
 // GET /api/etsy/imgfetch?url=...
-// Photo-editor ke liye: Etsy CDN ki image ke pixels chahiye hote hain,
-// magar browser ka CORS direct fetch rok deta hai — to backend utha kar deta hai.
-// Sirf *.etsystatic.com allowed (security: koi aur URL fetch nahi hoga).
+// For the photo editor: we need the pixels of Etsy CDN images,
+// but browser CORS blocks direct fetches — so the backend fetches them.
+// Only *.etsystatic.com is allowed (security: no other URL is fetched).
 router.get('/imgfetch', requireUser, async (req, res) => {
   try {
     const u = new URL(String(req.query.url || ''))
     if (!/(^|\.)etsystatic\.com$/.test(u.hostname) || u.protocol !== 'https:') {
-      return res.status(400).json({ ok: false, error: 'sirf Etsy ki images' })
+      return res.status(400).json({ ok: false, error: 'Etsy images only' })
     }
     const r = await fetch(u.href)
     if (!r.ok) return res.status(r.status).json({ ok: false, error: 'image fetch failed' })
@@ -1198,15 +1198,15 @@ router.get('/imgfetch', requireUser, async (req, res) => {
 })
 
 // POST /api/etsy/listing/image/alt { storeId, id, imageId, alt, rank }
-// Alt text set/change karna: Etsy me maujuda image ko usi ke listing_image_id
-// ke saath dobara POST karte hain (file dobara upload NAHI hoti) + alt_text.
-// rank saath bhejna zaruri hai warna Etsy usay rank 1 par le aata hai.
+// Setting/changing alt text: on Etsy we POST the existing image again with its
+// listing_image_id (the file is NOT re-uploaded) + alt_text.
+// rank must be sent too, otherwise Etsy moves it to rank 1.
 router.post('/listing/image/alt', requireUser, async (req, res) => {
   try {
     const { storeId, id, imageId, alt = '', rank } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const fd = new FormData()
     fd.append('listing_image_id', String(imageId))
     if (rank) fd.append('rank', String(rank))
@@ -1222,7 +1222,7 @@ router.post('/listing/image/delete', requireUser, async (req, res) => {
     const { storeId, id, imageId } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/images/${encodeURIComponent(imageId)}`, { method: 'DELETE' })
     res.json({ ok: true })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -1235,7 +1235,7 @@ router.post('/listing/image/order', requireUser, async (req, res) => {
     const { storeId, id, order = [] } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     for (let i = 0; i < order.length; i++) {
       const fd = new FormData()
       fd.append('listing_image_id', String(order[i]))
@@ -1254,7 +1254,7 @@ router.post('/listing/video', requireUser, async (req, res) => {
     const { storeId, id, dataUrl, name = 'listing-video.mp4' } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const { bytes, mime } = fromDataUrl(dataUrl)
     const fd = new FormData()
     fd.append('video', new Blob([bytes], { type: mime || 'video/mp4' }), name)
@@ -1270,7 +1270,7 @@ router.post('/listing/video/delete', requireUser, async (req, res) => {
     const { storeId, id, videoId } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}/videos/${encodeURIComponent(videoId)}`, { method: 'DELETE' })
     res.json({ ok: true })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -1283,10 +1283,10 @@ router.post('/listing/video/delete', requireUser, async (req, res) => {
 router.post('/listing/state', requireUser, async (req, res) => {
   try {
     const { storeId, id, state } = req.body
-    if (!['active', 'inactive'].includes(state)) return res.status(400).json({ ok: false, error: 'state sirf active/inactive ho sakti hai' })
+    if (!['active', 'inactive'].includes(state)) return res.status(400).json({ ok: false, error: 'State can only be active or inactive' })
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form({ state }) })
     res.json({ ok: true, state: l.state })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
@@ -1302,7 +1302,7 @@ router.get('/index', requireUser, async (req, res) => {
     const { storeId, state = 'active' } = req.query
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     const ck = `${conn.shop_id}:${state}`
     const hit = IDX_CACHE.get(ck)
     if (hit && Date.now() - hit.at < 10 * 60 * 1000 && !req.query.fresh) return res.json({ ok: true, cached: true, listings: hit.listings })
@@ -1344,7 +1344,7 @@ router.post('/listing/delete', requireUser, async (req, res) => {
     const { storeId, id } = req.body
     if (!storeId || !(await ownStore(storeId, req.user.id))) return res.status(404).json({ ok: false, error: 'store not found' })
     const conn = await getConn(storeId)
-    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
+    if (!conn) return res.status(400).json({ ok: false, error: 'Etsy is not connected' })
     await etsy(conn, `/listings/${encodeURIComponent(id)}`, { method: 'DELETE' })
     IDX_CACHE.clear()   // index is stale now
     res.json({ ok: true })

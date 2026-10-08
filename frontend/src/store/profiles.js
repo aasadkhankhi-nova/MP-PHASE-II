@@ -1,18 +1,18 @@
 /**
- * profiles.js — PROFILES system (Vela jaisa) — ab PER-STORE.
- * Ek profile = listing ka "template": materials, Details ka sara data
+ * profiles.js — PROFILES system (Vela-style) — now PER-STORE.
+ * A profile = a listing "template": materials, all of the Details data
  * (type, who/what/when, partners, category, attributes, renewal),
- * price+quantity, variations (SKU ke BAGHAIR), shipping ka sara data,
- * aur description ka profile-wala hissa (design-description ke neeche lagta hai).
+ * price+quantity, variations (WITHOUT SKU), all shipping data,
+ * and the profile part of the description (added below the design description).
  *
- * SKU kabhi profile me nahi hota — wo user har listing par khud dalta hai.
+ * SKU is never part of a profile — the user enters it on every listing.
  *
- * STORE-SCOPED: har store ki APNI profiles hain ('mp_profiles_<storeId>') —
- * dropdown se store badlo to usi store ki profiles dikhti hain; naya store
- * khali shuru hota hai; kisi store ki profile doosre store me nazar nahi aati.
- * (Purani GLOBAL list 'mp_profiles' pehli bar jis store me profiles khulti
- * hain USI me migrate ho jati hai — ghalat store me aa jaye to wahan delete
- * kar ke sahi store ki listing se dobara Save as Profile kar lein.)
+ * STORE-SCOPED: every store has its OWN profiles ('mp_profiles_<storeId>') —
+ * switch store in the dropdown and you see that store's profiles; a new store
+ * starts empty; one store's profiles never show up in another store.
+ * (The old GLOBAL list 'mp_profiles' migrates into whichever store first
+ * opens profiles — if it lands in the wrong store, delete it there and
+ * use Save as Profile again from a listing in the right store.)
  */
 
 const key = (storeId) => 'mp_profiles_' + (storeId || 'nostore')
@@ -21,7 +21,7 @@ export function getProfiles(storeId) {
   try {
     let raw = localStorage.getItem(key(storeId))
     if (raw == null) {
-      // one-time migration: purani global list is (pehli) store me chali jati hai
+      // one-time migration: the old global list moves into this (first) store
       const legacy = localStorage.getItem('mp_profiles')
       if (legacy != null && storeId) {
         localStorage.setItem(key(storeId), legacy)
@@ -49,7 +49,7 @@ export function newProfileId() {
   return 'p' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6)
 }
 
-/** Profile me kya kya set hai — panel ke chips ke liye chhota summary. */
+/** What is set in a profile — a short summary for the panel chips. */
 export function profileSummary(p) {
   const out = []
   if (p.details?.taxonomyId) out.push('Category')

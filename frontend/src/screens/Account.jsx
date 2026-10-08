@@ -43,24 +43,24 @@ export default function Account() {
         await authUpdateProfile(first.trim(), last.trim())
         const sess = getSession()
         if (sess) { sess.user.name = newName; setSession(sess) }
-        done.push('naam update ho gaya')
+        done.push('name updated')
       }
       if (newEmail.trim()) {
-        if (!emailPw) throw new Error('Email badalne ke liye password likhein')
+        if (!emailPw) throw new Error('Enter your password to change your email')
         await authChangeEmail(newEmail.trim(), emailPw, u.email)
-        done.push('email — confirmation link dono inbox me bheja gaya hai')
+        done.push('email — a confirmation link was sent to both inboxes')
       }
       if (curPw || p1 || p2) {
-        if (p1.length < 6) throw new Error('Naya password kam az kam 6 harf ka ho')
-        if (p1 !== p2) throw new Error('Naye passwords match nahi karte')
-        if (!curPw) throw new Error('Current password likhein')
+        if (p1.length < 6) throw new Error('New password must be at least 6 characters')
+        if (p1 !== p2) throw new Error('New passwords do not match')
+        if (!curPw) throw new Error('Please enter your current password')
         await authChangePassword(p1, curPw, u.email)
-        done.push('password update ho gaya')
+        done.push('password updated')
       }
-      if (!done.length) { setMsg('Kuch badla hi nahi 🙂'); return }
+      if (!done.length) { setMsg('Nothing changed 🙂'); return }
       setMsg('✅ ' + done.join(' · '))
       setNewEmail(''); setEmailPw(''); setCurPw(''); setP1(''); setP2('')
-      // sidebar avatar/name refresh ke liye halka sa reload
+      // light reload to refresh the sidebar avatar/name
       if (done[0].startsWith('naam')) setTimeout(() => location.reload(), 900)
     } catch (e) {
       setMsg('⚠ ' + (e.message || e))
@@ -124,10 +124,10 @@ export default function Account() {
         <button className="btn" disabled={busy} onClick={save}>{busy ? '⏳ Saving…' : 'Save'}</button>
       </div>
 
-      {/* ---- Import (purani Phase I app se) ---- */}
+      {/* ---- Import (from the old Phase I app) ---- */}
       <ImportCard />
 
-      {/* ---- AI API key (provider dropdown pehle — Phase I style) ---- */}
+      {/* ---- AI API key (provider dropdown first — Phase I style) ---- */}
       <AICard />
 
       {/* ---- stores manage (rename/delete) + Etsy connection ---- */}
@@ -149,10 +149,10 @@ export default function Account() {
 }
 
 /**
- * AICard — SEO ke liye AI ki key. PEHLE provider ka dropdown (jaise MP
- * Phase I me tha), phir us provider ki key ka box, phir Save.
- * Har provider ki key alag yaad rehti hai; jo provider chuna hua hai
- * usi se SEO chalta hai. Keys sirf IS browser me rehti hain.
+ * AICard — AI key for SEO. FIRST the provider dropdown (as in MP
+ * Phase I), then the key box for that provider, then Save.
+ * Each provider's key is remembered separately; SEO runs on the
+ * selected provider. Keys stay in THIS browser only.
  */
 function AICard() {
   const [ai, setAiState] = useState(() => {
@@ -164,12 +164,12 @@ function AICard() {
 
   const save = () => {
     setAI(ai)
-    setKMsg(ai.keys[ai.prov] ? `✅ ${prov.label} save ho gaya (sirf is browser me)` : '🗑 Key khali hai — SEO band rahega')
+    setKMsg(ai.keys[ai.prov] ? `✅ ${prov.label} saved (in this browser only)` : '🗑 Key is empty — SEO stays off')
   }
 
   return (
     <div className="card" style={{ maxWidth: 560 }}>
-      <h3 style={{ marginTop: 0 }}>🔑 API key (SEO ke liye)</h3>
+      <h3 style={{ marginTop: 0 }}>🔑 API key (for SEO)</h3>
       {/* line 1: provider dropdown */}
       <select value={ai.prov} onChange={(e) => { setAiState({ ...ai, prov: e.target.value }); setKMsg(null) }} style={{ width: '100%', marginBottom: 10 }}>
         {AI_PROVIDERS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
@@ -186,7 +186,7 @@ function AICard() {
         <button className="btn" onClick={save}>Save</button>
       </div>
       <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
-        Free key yahan se: <a className="lnk" href={'https://' + prov.help} target="_blank" rel="noreferrer">{prov.help}</a> · key sirf aap ke browser me rehti hai.
+        Get a free key here: <a className="lnk" href={'https://' + prov.help} target="_blank" rel="noreferrer">{prov.help}</a> · the key stays in your browser only.
       </p>
       {kMsg && <p className="muted" style={{ marginTop: 6 }}>{kMsg}</p>}
     </div>
@@ -213,7 +213,7 @@ function EtsyConnect({ storeId, storeName }) {
     const h = window.location.hash || ''
     if (h.startsWith('#etsy=')) {
       const v = decodeURIComponent(h.slice(6))
-      setEMsg(v.startsWith('connected:') ? '✅ Etsy connect ho gaya: ' + v.slice(10) : '⚠ ' + v.replace(/^error:/, ''))
+      setEMsg(v.startsWith('connected:') ? '✅ Etsy connected: ' + v.slice(10) : '⚠ ' + v.replace(/^error:/, ''))
       history.replaceState(null, '', window.location.pathname + window.location.search)
     }
   }, [storeId])
@@ -227,7 +227,7 @@ function EtsyConnect({ storeId, storeName }) {
   }
 
   const disconnect = async () => {
-    if (!confirm('Etsy connection hatana hai? (Data delete nahi hota, sirf link tootta hai)')) return
+    if (!confirm('Remove the Etsy connection? (No data is deleted, only the link is removed)')) return
     await etsy.disconnect(storeId)
     setSt({ ...st, connected: false, shop: null }); setLst(null)
   }
@@ -244,11 +244,11 @@ function EtsyConnect({ storeId, storeName }) {
       <h3 style={{ marginTop: 0 }}>🛍️ Etsy — {storeName || 'store'}</h3>
       {!st && !eMsg && <p className="muted">⏳ checking…</p>}
       {st && !st.keyReady && (
-        <p className="muted">Etsy integration abhi taiyar ho rahi hai (server par Etsy API key set hone ka intezar).</p>
+        <p className="muted">Etsy integration is not ready yet (waiting for the Etsy API key to be set on the server).</p>
       )}
       {st && st.keyReady && !st.connected && (
         <>
-          <p className="muted">Is store ko apni Etsy shop se jorein — phir listings seedha Etsy par draft ban kar jayengi.</p>
+          <p className="muted">Connect this store to your Etsy shop — listings will then go straight to Etsy as drafts.</p>
           <button className="btn" disabled={eBusy} onClick={connect}>🔗 Connect Etsy</button>
         </>
       )}
@@ -256,12 +256,12 @@ function EtsyConnect({ storeId, storeName }) {
         <>
           <p className="muted">✅ Connected: <b>{st.shop?.shop_name}</b> <span className="chip ok">shop #{st.shop?.shop_id}</span></p>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            <button className="btn ghost" disabled={eBusy} onClick={peek}>👀 Shop listings dekhein</button>
+            <button className="btn ghost" disabled={eBusy} onClick={peek}>👀 View shop listings</button>
             <button className="btn danger" onClick={disconnect}>Disconnect</button>
           </div>
           {lst && (
             <div style={{ marginTop: 10 }}>
-              <p className="muted"><b>{lst.count}</b> active listings{lst.listings.length ? ' — pehli ' + lst.listings.length + ':' : ''}</p>
+              <p className="muted"><b>{lst.count}</b> active listings{lst.listings.length ? ' — first ' + lst.listings.length + ':' : ''}</p>
               {lst.listings.map((l) => (
                 <p key={l.id} className="muted" style={{ margin: '3px 0' }}>• {l.title} <span className="chip">{l.state}</span></p>
               ))}
@@ -290,7 +290,7 @@ function ImportCard() {
   const app = useApp()
   const [prog, setProg] = useState(null)   // "store 1/3 · image 12/80"
   const [iMsg, setIMsg] = useState(null)
-  const [pick, setPick] = useState(null)   // merge-mode: .mpbackup ke stores me se kaunsa is store me dalna hai
+  const [pick, setPick] = useState(null)   // merge mode: which store from the .mpbackup goes into this store
 
   const mapDesign = (d) => ({
     id: d.id, name: d.name, dataUrl: d.dataUrl,
@@ -318,8 +318,8 @@ function ImportCard() {
         // .mpproj — one store's data at the top level
         stores = [{ name: file.name.replace(/\.[^.]+$/, ''), ws: data }]
       }
-      if (!stores.length) throw new Error('Is file me koi store data nahi mila')
-      if (!confirm(`${stores.length} store(s) milen — har ek ListPilot me NAYA store banega. Import shuru karein?`)) return
+      if (!stores.length) throw new Error('No store data found in this file')
+      if (!confirm(`${stores.length} store(s) found — each will become a NEW store in ListPilot. Start import?`)) return
 
       for (let si = 0; si < stores.length; si++) {
         const s = stores[si]
@@ -332,15 +332,15 @@ function ImportCard() {
           setProg(`store ${si + 1}/${stores.length} (${s.name}) · image ${i}/${n} upload…`))
       }
       setProg(null)
-      setIMsg(`✅ Import mukammal — ${stores.length} store(s) aa gaye. Sidebar dropdown se dekhein!`)
+      setIMsg(`✅ Import complete — ${stores.length} store(s) added. See them in the sidebar dropdown!`)
     } catch (e) {
       setProg(null)
       setIMsg('⚠ ' + (e.message || e))
     }
   }
 
-  // ---- MERGE mode: file parho, phir chunein kaunse Phase-I store ka data
-  //      ISI (current, Etsy-connected) store me dalna hai ----
+  // ---- MERGE mode: read the file, then choose which Phase I store's data
+  //      goes into THIS (current, Etsy-connected) store ----
   const doMergeFile = async (file) => {
     if (!file) return
     setIMsg(null)
@@ -354,46 +354,46 @@ function ImportCard() {
       } else if (data.mockups || data.designs) {
         stores = [{ name: file.name.replace(/\.[^.]+$/, ''), ws: data }]
       }
-      if (!stores.length) throw new Error('Is file me koi store data nahi mila')
+      if (!stores.length) throw new Error('No store data found in this file')
       if (stores.length === 1) return doMerge(stores[0])
       setPick(stores)   // multiple stores — user chunega
     } catch (e) { setIMsg('⚠ ' + (e.message || e)) }
   }
   const doMerge = async (s) => {
     setPick(null)
-    if (!confirm(`"${s.name}" ka data (${(s.ws.mockups || []).length} mockups, ${(s.ws.designs || []).length} designs) ISI store "${app.curStore?.name}" me add ho jayega. Theek hai?`)) return
+    if (!confirm(`The data of "${s.name}" (${(s.ws.mockups || []).length} mockups, ${(s.ws.designs || []).length} designs) will be added to THIS store "${app.curStore?.name}". OK?`)) return
     try {
       const ws = {
         mockups: (s.ws.mockups || []).map(mapMockup),
         designs: (s.ws.designs || []).map(mapDesign),
         sets: (s.ws.sets || []).map((x) => ({ id: x.id, name: x.name })),
       }
-      const r = await app.importIntoCurrent(ws, (i, n) => setProg(`"${s.name}" → is store me · image ${i}/${n} upload…`))
+      const r = await app.importIntoCurrent(ws, (i, n) => setProg(`"${s.name}" → this store · uploading image ${i}/${n}…`))
       setProg(null)
-      setIMsg(`✅ "${s.name}" is store me aa gaya — ${r.mockups} mockups (boxes samet), ${r.designs} designs, ${r.sets} sets.`)
+      setIMsg(`✅ "${s.name}" added to this store — ${r.mockups} mockups (with boxes), ${r.designs} designs, ${r.sets} sets.`)
     } catch (e) { setProg(null); setIMsg('⚠ ' + (e.message || e)) }
   }
 
   return (
     <div className="card">
-      <h3 style={{ marginTop: 0 }}>📂 Import (purani MP Phase I app se)</h3>
+      <h3 style={{ marginTop: 0 }}>📂 Import (from the old MP Phase I app)</h3>
       <p className="muted">
-        Phase I me Dashboard par <b>"💾 Backup ALL data"</b> daba kar jo <b>.mpbackup</b> file bane, usay yahan
-        chunein — saare stores (mockups, boxes, designs, sets samet) ListPilot me aa jayenge.
-        Single-store <b>.mpproj</b> file bhi chalti hai.
+        Choose the <b>.mpbackup</b> file you get by pressing <b>"💾 Backup ALL data"</b> on the Phase I Dashboard
+        — all stores (with mockups, boxes, designs and sets) will be imported into ListPilot.
+        Single-store <b>.mpproj</b> files work too.
       </p>
       {prog ? (
         <p className="muted">⏳ {prog}</p>
       ) : (
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           <label className="btn ghost" style={{ cursor: 'pointer' }}>
-            📂 Naye store(s) banao (.mpbackup / .mpproj)
+            📂 Create new store(s) (.mpbackup / .mpproj)
             <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
               onChange={(e) => { doImport(e.target.files[0]); e.target.value = '' }} />
           </label>
           {app.curStoreId && (
             <label className="btn ghost" style={{ cursor: 'pointer' }}>
-              📥 ISI store ({app.curStore?.name}) me dalo
+              📥 Add to THIS store ({app.curStore?.name})
               <input type="file" accept=".mpbackup,.mpproj,application/json" style={{ display: 'none' }}
                 onChange={(e) => { doMergeFile(e.target.files[0]); e.target.value = '' }} />
             </label>
@@ -401,12 +401,12 @@ function ImportCard() {
         </div>
       )}
       <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-        📥 wala button un ke liye jo pehle Etsy shops OAuth se connect kar chuke hain: har shop khol kar
-        us shop wale Phase-I store ka data usi me merge karein — mockups apne boxes samet aate hain.
+        The 📥 button is for shops already connected via Etsy OAuth: open each shop and
+        merge that shop's Phase I store data into it — mockups come with their boxes.
       </p>
       {pick && (
         <div style={{ marginTop: 10, border: '1px solid var(--line)', borderRadius: 10, padding: 12 }}>
-          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>Backup me {pick.length} stores hain — kaunse ka data <b>{app.curStore?.name}</b> me dalna hai?</p>
+          <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>The backup has {pick.length} stores — which one should go into <b>{app.curStore?.name}</b>?</p>
           <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
             {pick.map((s, i) => (
               <button key={i} className="btn sm ghost" onClick={() => doMerge(s)}>

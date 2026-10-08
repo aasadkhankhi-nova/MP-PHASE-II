@@ -15,7 +15,7 @@ export default function Mockups() {
     <>
       <div className="card">
         <h3 style={{ marginTop: 0 }}>🖼️ Mockups <span className="chip">{app.ws.mockups.length}</span></h3>
-        <Drop label="＋ Mockup photos yahan drop karein (JPG/PNG/WebP)" accept="image/jpeg,image/png,image/webp" onFiles={(f) => app.addMockupFiles(f)} />
+        <Drop label="＋ Drop mockup photos here (JPG/PNG/WebP)" accept="image/jpeg,image/png,image/webp" onFiles={(f) => app.addMockupFiles(f)} />
       </div>
       <div className="grid">
         {app.ws.mockups.map((m) => (
@@ -48,7 +48,7 @@ export default function Mockups() {
           </div>
         ))}
       </div>
-      {!app.ws.mockups.length && <Empty>Abhi koi mockup nahi. Upar drop-zone se upload karein.</Empty>}
+      {!app.ws.mockups.length && <Empty>No mockups yet. Upload some using the drop zone above.</Empty>}
       {editId && <BoxEditor mockupId={editId} onClose={() => setEditId(null)} />}
     </>
   )
