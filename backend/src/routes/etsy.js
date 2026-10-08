@@ -68,6 +68,9 @@ async function ensureStateTable() {
   await q(`create table if not exists etsy_oauth_states (
     id text primary key, verifier text not null, store_id text not null,
     user_id text not null, exp bigint not null)`)
+  // RLS on with no policies = the public Supabase API can't read these PKCE
+  // secrets; the backend connects as the table owner, so it still can.
+  await q('alter table etsy_oauth_states enable row level security')
   stTableReady = true
 }
 async function putState(data) {
@@ -97,6 +100,7 @@ async function ensureCreateLog() {
   if (crTableReady) return
   await q(`create table if not exists etsy_create_log (
     store_id text not null, at bigint not null)`)
+  await q('alter table etsy_create_log enable row level security')
   crTableReady = true
 }
 // Returns an error message if this store must wait, else null (and logs the create).
