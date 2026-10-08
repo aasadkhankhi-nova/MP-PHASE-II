@@ -459,7 +459,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   const [autoRenew, setAutoRenew] = useState(!!detail.autoRenew)
   // ---- E3: details ----
   const [enums, setEnums] = useState(null)              // who_made / when_made options (live)
-  const [whoMade, setWhoMade] = useState(detail.whoMade || 'i_did')
+  const [whoMade, setWhoMade] = useState(detail.whoMade || 'someone_else')
   const [whenMade, setWhenMade] = useState(detail.whenMade || 'made_to_order')
   const [shipProfiles, setShipProfiles] = useState(null)
   const [shipId, setShipId] = useState(detail.shippingProfileId || '')
@@ -664,7 +664,7 @@ function EtsyEdit({ storeId, detail, onDone, onCancel, shopName }) {
   // load everything the editor's dropdowns need — all LIVE from Etsy
   useEffect(() => {
     etsy.sections(storeId).then((r) => setSections(r.sections)).catch(() => setSections([]))
-    etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['i_did'], whenMade: ['made_to_order'] }))
+    etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['someone_else', 'i_did', 'collective'], whenMade: ['made_to_order'] }))
     etsy.shippingProfiles(storeId).then((r) => setShipProfiles(r.profiles)).catch(() => setShipProfiles([]))
     etsy.returnPolicies(storeId).then((r) => setRetPolicies(r.policies)).catch(() => setRetPolicies([]))
     etsy.taxonomyTree().then((r) => setTaxoTree(r.tree)).catch(() => setTaxoTree([]))

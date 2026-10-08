@@ -32,9 +32,14 @@ const router = Router()
 const APP_URL = process.env.APP_URL || 'https://aasadkhankhi-nova.github.io/MP-PHASE-II/app/'
 const BACKEND_URL = process.env.BACKEND_URL || 'https://mp-backend-rw3i.onrender.com'
 const REDIRECT = process.env.ETSY_REDIRECT || `${BACKEND_URL}/api/etsy/callback`
-// ALL the permissions we will ever need — asked once, so users never
-// have to re-connect when we add features (orders, reviews, digital files).
-const SCOPES = 'listings_r listings_w listings_d shops_r shops_w transactions_r feedback_r email_r'
+// ONLY the permissions this app actually uses (Etsy API Terms: don't request
+// more data than the app needs). Listings + shop setup (sections, shipping
+// and return profiles). Orders/reviews/email are NOT requested.
+const SCOPES = 'listings_r listings_w listings_d shops_r shops_w'
+
+// Print-on-demand items are made by a production partner, not by the seller,
+// so the honest default for "Who made it?" is someone_else.
+const DEFAULT_WHO_MADE = 'someone_else'
 
 // Etsy credentials. Etsy's v3 API requires the x-api-key HEADER to be
 // "keystring:shared_secret" (both, colon-separated), while the OAuth
@@ -80,6 +85,37 @@ async function takeState(id) {
   await q('delete from etsy_oauth_states where id=$1', [id])
   const r = rows[0]
   return r ? { verifier: r.verifier, storeId: r.store_id, userId: r.user_id, exp: Number(r.exp) } : null
+}
+
+// ---------- listing-creation rate limit ----------
+// New listings are created at a calm pace so the app never publishes in bulk
+// bursts. Counted in the DB so the limit survives Render restarts.
+const CREATE_LIMIT_PER_HOUR = Number(process.env.ETSY_CREATE_PER_HOUR) || 10
+const CREATE_MIN_GAP_MS = 30 * 1000
+let crTableReady = false
+async function ensureCreateLog() {
+  if (crTableReady) return
+  await q(`create table if not exists etsy_create_log (
+    store_id text not null, at bigint not null)`)
+  crTableReady = true
+}
+// Returns an error message if this store must wait, else null (and logs the create).
+async function takeCreateSlot(storeId) {
+  await ensureCreateLog()
+  const now = Date.now()
+  await q('delete from etsy_create_log where at < $1', [now - 60 * 60 * 1000])
+  const rows = await q('select at from etsy_create_log where store_id=$1 order by at desc', [storeId])
+  if (rows.length && now - Number(rows[0].at) < CREATE_MIN_GAP_MS) {
+    const s = Math.ceil((CREATE_MIN_GAP_MS - (now - Number(rows[0].at))) / 1000)
+    return `Thora ruk jayein — agli listing ${s} second baad ban sakti hai`
+  }
+  if (rows.length >= CREATE_LIMIT_PER_HOUR) {
+    const oldest = Number(rows[rows.length - 1].at)
+    const m = Math.ceil((oldest + 60 * 60 * 1000 - now) / 60000)
+    return `Is store ki ek ghante ki had (${CREATE_LIMIT_PER_HOUR} listings) poori ho gayi — ${m} minute baad dobara koshish karein`
+  }
+  await q('insert into etsy_create_log (store_id, at) values ($1,$2)', [storeId, now])
+  return null
 }
 
 // Does this MP store belong to the logged-in user?
@@ -408,6 +444,8 @@ router.post('/publish', requireUser, async (req, res) => {
       return res.status(400).json({ ok: false, error: 'title, price, category aur shipping profile lazmi hain' })
     }
 
+    const wait = await takeCreateSlot(storeId)
+    if (wait) return res.status(429).json({ ok: false, error: wait })
     // 1) the draft listing itself
     const listing = await etsy(conn, `/shops/${conn.shop_id}/listings`, {
       method: 'POST',
@@ -419,7 +457,7 @@ router.post('/publish', requireUser, async (req, res) => {
         quantity: Number(quantity) || 1,
         taxonomy_id: Number(taxonomyId),
         shipping_profile_id: Number(shippingProfileId),
-        who_made: 'i_did',            // required by Etsy: who made it
+        who_made: DEFAULT_WHO_MADE,   // POD: made by a production partner
         when_made: 'made_to_order',   // typical for print-on-demand
         state: 'draft',               // NEVER auto-publish — seller reviews first
       }),
@@ -824,6 +862,8 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
     if (!det.taxonomyId) return res.status(400).json({ ok: false, error: 'Profile me Category (Details) set nahi hai — pehle profile me category set karein' })
     if (!sh.shippingProfileId) return res.status(400).json({ ok: false, error: 'Profile me Shipping profile set nahi hai' })
 
+    const wait = await takeCreateSlot(storeId)
+    if (wait) return res.status(429).json({ ok: false, error: wait })
     // 1) draft listing — core fields
     const priceBase = Number(d.variations?.products?.[0]?.price) || Number(d.priceQty?.price) || 1
     const draft = {
@@ -831,7 +871,7 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
       title: String(d.title).slice(0, 140),
       description: d.description || d.title,
       price: priceBase,
-      who_made: det.whoMade || 'i_did',
+      who_made: det.whoMade || DEFAULT_WHO_MADE,
       when_made: det.whenMade || 'made_to_order',
       taxonomy_id: Number(det.taxonomyId),
       shipping_profile_id: Number(sh.shippingProfileId),
@@ -939,6 +979,8 @@ router.post('/listing/copy', requireUser, async (req, res) => {
     const conn = await getConn(storeId)
     if (!conn) return res.status(400).json({ ok: false, error: 'Etsy connected nahi hai' })
 
+    const wait = await takeCreateSlot(storeId)
+    if (wait) return res.status(429).json({ ok: false, error: wait })
     const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
     // 1) naya draft — core fields ke saath
     const draft = {
@@ -946,7 +988,7 @@ router.post('/listing/copy', requireUser, async (req, res) => {
       title: l.title,
       description: l.description || l.title,
       price: money(l.price) || 1,
-      who_made: l.who_made || 'i_did',
+      who_made: l.who_made || DEFAULT_WHO_MADE,
       when_made: l.when_made || 'made_to_order',
       taxonomy_id: l.taxonomy_id,
       tags: l.tags || [],

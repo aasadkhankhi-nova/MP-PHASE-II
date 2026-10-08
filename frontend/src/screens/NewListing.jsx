@@ -283,7 +283,7 @@ export default function NewListing({ L, onBack, onSaved }) {
         {profile && (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(230px,1fr))', gap: '10px 18px', fontSize: 13.5 }}>
             <span><span className="muted">Type:</span> <b>{det.ltype === 'download' ? 'Digital' : 'Physical'}</b></span>
-            <span><span className="muted">Who made:</span> <b>{nice(det.whoMade || 'i_did')}</b></span>
+            <span><span className="muted">Who made:</span> <b>{nice(det.whoMade || 'someone_else')}</b></span>
             <span><span className="muted">What is it:</span> <b>{det.isSupply ? 'A supply or tool' : 'A finished product'}</b></span>
             <span><span className="muted">When made:</span> <b>{nice(det.whenMade || 'made_to_order')}</b></span>
             <span style={{ gridColumn: '1 / -1' }}><span className="muted">Category:</span> <b>{taxoTree === null ? '⏳' : (taxoPathNames.length ? taxoPathNames.join(' › ') : det.taxonomyId ? `#${det.taxonomyId}` : '—')}</b></span>

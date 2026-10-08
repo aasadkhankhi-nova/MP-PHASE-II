@@ -75,7 +75,7 @@ export default function ProfileEdit({ id, onBack }) {
   useEffect(() => {
     if (!storeId) return
     etsy.sections(storeId).then((r) => setSections(r.sections)).catch(() => setSections([]))
-    etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['i_did'], whenMade: ['made_to_order'] }))
+    etsy.enums().then(setEnums).catch(() => setEnums({ whoMade: ['someone_else', 'i_did', 'collective'], whenMade: ['made_to_order'] }))
     etsy.partners(storeId).then((r) => setPartners(r.partners)).catch(() => setPartners([]))
     etsy.taxonomyTree().then((r) => setTaxoTree(r.tree)).catch(() => setTaxoTree([]))
     etsy.readiness(storeId).then((r) => setReadiness(r.states)).catch(() => setReadiness([]))
@@ -206,8 +206,8 @@ export default function ProfileEdit({ id, onBack }) {
         <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', marginBottom: 14 }}>
           <span>
             <label className="muted" style={{ fontSize: 12, display: 'block' }}>Who made it?</label>
-            <select value={det.whoMade || 'i_did'} onChange={(e) => uD({ whoMade: e.target.value })} style={{ minWidth: 150 }}>
-              {(enums?.whoMade || ['i_did']).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
+            <select value={det.whoMade || 'someone_else'} onChange={(e) => uD({ whoMade: e.target.value })} style={{ minWidth: 150 }}>
+              {(enums?.whoMade || ['someone_else', 'i_did', 'collective']).map((v) => <option key={v} value={v}>{nice(v)}</option>)}
             </select>
           </span>
           <span>

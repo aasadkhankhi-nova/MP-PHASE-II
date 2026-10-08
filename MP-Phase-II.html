@@ -773,17 +773,6 @@ function addMockupFiles(files,onAdd){if(S.mockups.length>=50){toast(t('limitMock
    n++;if(onAdd)onAdd(S.mockups[S.mockups.length-1]);if(CUR.screen==='mock')rMock();toast(n+' '+t('uploaded'));});};
   r.readAsDataURL(f);});}
 function loadImg(src){return new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.src=src;});}
-/* invisible uniqueness: flip the least-significant bit of a few random pixels so every
-   exported picture has a different byte fingerprint (hash) — even the exact same
-   mockup+design regenerated twice. ±1/255 per channel is imperceptible. */
-function uniquify(ctx,w,h){try{
- const n=24+Math.floor(Math.random()*8);
- for(let i=0;i<n;i++){
-  const x=Math.floor(Math.random()*w),y=Math.floor(Math.random()*h);
-  const d=ctx.getImageData(x,y,1,1);
-  d.data[0]^=1;if(Math.random()<0.5)d.data[1]^=1;if(Math.random()<0.5)d.data[2]^=1;
-  ctx.putImageData(d,x,y);}
-}catch(e){}}
 function delMockup(id){if(!confirm(t('confirmDelMock')))return;S.mockups=S.mockups.filter(m=>m.id!==id);cloudDel('mockups',id);rMock();}
 function openSetPicker(mid){const m=S.mockups.find(x=>x.id===mid);
  modal(`<h2>${t('addToSet')}</h2><div style="margin:14px 0">
@@ -1108,7 +1097,7 @@ async function runJob(){const targets=genTargets(),designs=genDesigns();
    ctx.font='700 '+fs+'px sans-serif';ctx.textAlign='right';ctx.lineWidth=Math.max(2,fs/10);
    ctx.strokeStyle='rgba(0,0,0,.45)';ctx.strokeText(OUT.wm,cw-fs,ch-fs);
    ctx.fillStyle='#fff';ctx.fillText(OUT.wm,cw-fs,ch-fs);ctx.restore();}
-  if(placed>0){uniquify(ctx,cw,ch);job.outputs.push({name:`${m.name}_${job.group.replace(/\s+/g,'-')}.${OUT.fmt==='jpg'?'jpg':'png'}`,dataUrl:OUT.fmt==='jpg'?cv.toDataURL('image/jpeg',OUT.q):cv.toDataURL('image/png'),mock:m.name,mockId:m.id});}
+  if(placed>0){job.outputs.push({name:`${m.name}_${job.group.replace(/\s+/g,'-')}.${OUT.fmt==='jpg'?'jpg':'png'}`,dataUrl:OUT.fmt==='jpg'?cv.toDataURL('image/jpeg',OUT.q):cv.toDataURL('image/png'),mock:m.name,mockId:m.id});}
  }
  designs.forEach(d=>{if(!usedDesign.has(d.id))job.report.undes.push(d.name);});
  if(window.Notification&&Notification.permission==='granted'){try{new Notification('MP',{body:t('notifDone')+' — '+job.outputs.length});}catch(e){}}
@@ -1799,7 +1788,7 @@ async function runListing(id,quiet){const L=S.listings.find(x=>x.id===id);if(!L)
    if(b.rot){const dx=ox-(bw-dw)/2,dy=oy-(bh-dh)/2;
     ctx.save();ctx.translate(bx+bw/2,by+bh/2);ctx.rotate(b.rot*Math.PI/180);ctx.drawImage(dimg,-dw/2+dx,-dh/2+dy,dw,dh);ctx.restore();}
    else ctx.drawImage(dimg,bx+ox,by+oy,dw,dh);}
-  if(placed>0){uniquify(ctx,cv.width,cv.height);L.outputs.push({name:`${m.name}_${(L.category||'listing').replace(/\s+/g,'-')}.png`,dataUrl:cv.toDataURL('image/png'),mockId:m.id});}}
+  if(placed>0){L.outputs.push({name:`${m.name}_${(L.category||'listing').replace(/\s+/g,'-')}.png`,dataUrl:cv.toDataURL('image/png'),mockId:m.id});}}
  if(prog)prog.innerHTML=`<div class="card" style="padding:20px"><b>✨ SEO…</b></div>`;
  await genListingSeo(L);
  /* per-photo vision ALT texts — each picture described from what it actually shows */
@@ -2035,7 +2024,7 @@ function seoCardHTML(L){const seo=L.seo||{title:'',tags:[],desc:'',ldesc:''};con
 let PROF_RET=null; /* wizard listing id to return to after creating a profile */
 function defAttrs(){return{scale:'',sleeve:'',neckline:'',sustain:'',style:'',occasion:'',holiday:'',graphic:''};}
 function defProfile(){const p={id:uid(),name:'',category:'T-Shirt',taxonomy:'Clothing > Unisex Adult Clothing > Tops & Tees > T-shirts',
- type:'physical',whenMade:'made_to_order',whoMade:'i_did',isSupply:false,howMade:'altered',tools:'computerized',prodPartner:'',
+ type:'physical',whenMade:'made_to_order',whoMade:'someone_else',isSupply:false,howMade:'altered',tools:'computerized',prodPartner:'',
  descTemplate:'',qty:999,materials:'cotton, polyester',
  varSizeName:'Size',varColorName:'Color',
  sizeOpts:['S','M','L','XL','2XL'],colorOpts:['White','Black','Navy'],combos:[],
@@ -2318,7 +2307,7 @@ function secPick(id,v){const L=S.listings.find(x=>x.id===id);if(!L)return;const 
  }else e.section=v;
  saveWS();crtRefresh(id);}
 /* ============ full Etsy listing details (local mirror of the Etsy fields) ============ */
-function defEtsy(){return{price:19.99,qty:999,sku:'',whoMade:'i_did',whenMade:'made_to_order',isSupply:false,
+function defEtsy(){return{price:19.99,qty:999,sku:'',whoMade:'someone_else',whenMade:'made_to_order',isSupply:false,
  type:'physical',taxonomy:'',section:'',materials:'cotton, polyester',
  varSizeName:'Size',varSizes:'S, M, L, XL, 2XL',sizePrices:'',varColorName:'Color',varColors:'',
  howMade:'altered',tools:'computerized',prodPartner:'',feature:false,shipProfile:'',
