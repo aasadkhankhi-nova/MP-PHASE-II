@@ -56,7 +56,7 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
     return () => { onEditing && onEditing(false) }
   }, [openId])
 
-  // ListPilot-made listings (for the 🚀 Launchpad filter)
+  // Nova Listing Manager-made listings (for the 🚀 Launchpad filter)
   const lpIds = useMemo(() => new Set(
     (app.ws.listings || []).map((L) => L.etsy?.listingId).filter(Boolean).map(String)
   ), [app.ws.listings])
@@ -203,7 +203,7 @@ export default function EtsyStore({ es, state, filt, onDeleted, onRefresh, onCre
             <select value={sort} onChange={(e) => setSort(e.target.value)}>
               {SORTS.map((sx) => <option key={sx.id} value={sx.id}>{sx.label}</option>)}
             </select>
-            {/* brand blue — same as every other primary button in ListPilot */}
+            {/* brand blue — same as every other primary button in Nova Listing Manager */}
             <button className="btn sm" onClick={onCreate}>＋ Create listing</button>
           </span>
         </div>

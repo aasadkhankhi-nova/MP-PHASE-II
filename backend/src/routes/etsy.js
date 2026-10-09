@@ -671,9 +671,8 @@ router.post('/listing/update', requireUser, async (req, res) => {
     if (patch.returnPolicyId !== undefined && patch.returnPolicyId) body.return_policy_id = Number(patch.returnPolicyId)
     // personalization (Vela's Personalization tab)
     if (patch.personalizable !== undefined) body.is_personalizable = patch.personalizable ? 'true' : 'false'
-    if (patch.persRequired !== undefined) body.personalization_is_required = patch.persRequired ? 'true' : 'false'
-    if (patch.persInstructions !== undefined) body.personalization_instructions = String(patch.persInstructions).slice(0, 1024)
-    if (patch.persCharMax !== undefined && patch.persCharMax) body.personalization_char_count_max = Number(patch.persCharMax)
+    // NOTE: personalization_is_required / _instructions / _char_count_max are DEPRECATED by Etsy
+    // (sending them returns an error). Questions are saved via POST /api/etsy/personalization.
     if (!Object.keys(body).length) return res.status(400).json({ ok: false, error: 'Nothing changed' })
     const l = await etsy(conn, `/shops/${conn.shop_id}/listings/${encodeURIComponent(id)}`, { method: 'PATCH', body: form(body) })
     res.json({ ok: true, title: l.title })
@@ -839,7 +838,7 @@ router.post('/inventory/update', requireUser, async (req, res) => {
       sku_on_property: skuOnProperty,
     }
     // inventory endpoint speaks JSON (string body -> our helper sets the JSON header)
-    await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory`, { method: 'PUT', body: JSON.stringify(body) })
+    await etsy(conn, `/listings/${encodeURIComponent(id)}/inventory?max_variations_supported=3`, { method: 'PUT', body: JSON.stringify(body) })
     res.json({ ok: true })
   } catch (e) { res.status(e.status || 500).json({ ok: false, error: e.message }) }
 })
@@ -938,12 +937,12 @@ router.post('/listing/create-full', requireUser, async (req, res) => {
           property_values: p.propertyValues || [],
           offerings: [{ price: Number(p.price) || priceBase, quantity: Number(p.quantity) || 999, is_enabled: p.enabled !== false, ...ready }],
         }))
-        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+        await etsy(conn, `/listings/${nl.listing_id}/inventory?max_variations_supported=3`, {
           method: 'PUT',
           body: JSON.stringify({ products: prods, price_on_property: d.variations.pOn || [], quantity_on_property: d.variations.qOn || [], sku_on_property: [] }),
         })
       } else if (d.sku) {
-        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+        await etsy(conn, `/listings/${nl.listing_id}/inventory?max_variations_supported=3`, {
           method: 'PUT',
           body: JSON.stringify({ products: [{ sku: d.sku, property_values: [], offerings: [{ price: priceBase, quantity: Number(d.priceQty?.quantity) || 999, is_enabled: true, ...ready }] }], price_on_property: [], quantity_on_property: [], sku_on_property: [] }),
         })
@@ -986,6 +985,11 @@ router.post('/listing/copy', requireUser, async (req, res) => {
     const wait = await takeCreateSlot(storeId)
     if (wait) return res.status(429).json({ ok: false, error: wait })
     const l = await etsy(conn, `/listings/${encodeURIComponent(id)}?includes=Images`)
+    // Etsy API Terms: never copy other members' listings, photos or designs.
+    // Only a listing that belongs to THIS connected shop can be duplicated.
+    if (String(l.shop_id) !== String(conn.shop_id)) {
+      return res.status(403).json({ ok: false, error: 'Only listings from your own connected shop can be copied.' })
+    }
     // 1) new draft — with the core fields
     const draft = {
       quantity: l.quantity || 1,
@@ -1042,7 +1046,7 @@ router.post('/listing/copy', requireUser, async (req, res) => {
             ...(o.readiness_state_id ? { readiness_state_id: o.readiness_state_id } : {}),
           })),
         }))
-        await etsy(conn, `/listings/${nl.listing_id}/inventory`, {
+        await etsy(conn, `/listings/${nl.listing_id}/inventory?max_variations_supported=3`, {
           method: 'PUT',
           body: JSON.stringify({
             products: prods,
