@@ -24,7 +24,7 @@ import React, { useState, useEffect, useRef } from 'react'
 import { useApp } from '../store/AppState.jsx'
 import { authLogin, authSignup, authResend, googleSignInUrl, takeOAuthError, TURNSTILE_SITE_KEY } from '../api.js'
 
-export default function Login() {
+export default function Login({ embedded = false }) {
   const app = useApp()
   const [mode, setMode] = useState('in')   // 'in' = sign in, 'up' = create account, 'verify' = check email
   const [first, setFirst] = useState('')   // signup: first name
@@ -82,7 +82,7 @@ export default function Login() {
 
   const up = mode === 'up'
   return (
-    <div className="login-gate">
+    <div className={embedded ? 'login-embed' : 'login-gate'}>
       <div className="login-card">
         <div className="login-logo"><span className="login-badge-icon">✈</span> Nova Listing Manager</div>
         <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>Listing management for Nova Agencies shops</p>

@@ -19,6 +19,7 @@ import { getProfiles } from './store/profiles.js'
 import ProfileEdit from './screens/ProfileEdit.jsx'
 import Account from './screens/Account.jsx'
 import Login from './screens/Login.jsx'
+import Landing from './screens/Landing.jsx'
 
 // Screen titles for the top bar (the old NAV list is gone — the sidebar
 // is now the Vela-style filter menu itself).
@@ -280,7 +281,7 @@ function Shell() {
   }
 
   // GATE 1: must be logged in.
-  if (app.ready && !app.authed) return <Login />
+  if (app.ready && !app.authed) return <Landing />
 
   // GATE 2: must have a store open — otherwise force Settings.
   const needStore = app.ready && !app.curStore
