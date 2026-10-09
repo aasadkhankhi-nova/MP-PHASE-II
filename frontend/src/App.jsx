@@ -306,7 +306,7 @@ function Shell() {
           Icons only; the name appears on hover (native tooltip). */}
       <nav className="rail">
         {/* logo = HOME: selected shop's Active listings */}
-        <button className="rail-logo" title="Nova Listing Manager — Active listings"
+        <button className="rail-logo" title="Design2List — Active listings"
           onClick={() => { setRail('listings'); pickState('active') }}>✈</button>
 
         <button className={'rail-btn' + (rail === 'listings' ? ' active' : '')} title="Listings"
@@ -348,8 +348,8 @@ function Shell() {
             </button>
           ))}
 
-          {/* Nova Listing Manager — the workshop screens + Launchpad */}
-          <div className="nav-sec">Nova Listing Manager</div>
+          {/* Design2List — the workshop screens + Launchpad */}
+          <div className="nav-sec">Design2List</div>
           {[
             { id: 'mockups', label: '🖼️ Mockups', count: app.ws.mockups.length },
             { id: 'sets', label: '🗂️ Sets', count: app.ws.sets.length },

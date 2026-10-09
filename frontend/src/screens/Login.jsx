@@ -84,7 +84,7 @@ export default function Login({ embedded = false }) {
   return (
     <div className={embedded ? 'login-embed' : 'login-gate'}>
       <div className="login-card">
-        <div className="login-logo"><span className="login-badge-icon">✈</span> Nova Listing Manager</div>
+        <div className="login-logo"><span className="login-badge-icon">✈</span> Design2List</div>
         <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>Listing management for Nova Agencies shops</p>
 
         {mode === 'verify' ? (
@@ -221,9 +221,9 @@ function TermsModal({ onClose }) {
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-card" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
-        <h2 style={{ marginTop: 0 }}>Nova Listing Manager — Terms of Service & Privacy Policy</h2>
+        <h2 style={{ marginTop: 0 }}>Design2List — Terms of Service & Privacy Policy</h2>
         <div className="muted" style={{ fontSize: 13.5, lineHeight: 1.7 }}>
-          <p><b>1. The service.</b> Nova Listing Manager is an internal tool of Nova Agencies. It helps our team create product listings from designs made by our own designers: it places the designs on our mockup photos, drafts SEO text with AI for a person to review, and sends draft listings to Etsy shops we own or that have authorized us through Etsy. It never copies other shops' listings or designs and never publishes anything without a person pressing Publish. The service is provided "as is", without warranties.</p>
+          <p><b>1. The service.</b> Design2List is an internal tool of Nova Agencies. It helps our team create product listings from designs made by our own designers: it places the designs on our mockup photos, drafts SEO text with AI for a person to review, and sends draft listings to Etsy shops we own or that have authorized us through Etsy. It never copies other shops' listings or designs and never publishes anything without a person pressing Publish. The service is provided "as is", without warranties.</p>
           <p><b>2. Your account.</b> You must be at least 18 years old. Keep your password safe — you are responsible for activity on your account.</p>
           <p><b>3. Your content.</b> The designs and photos you upload remain yours. You confirm you have the rights to use them, and that they do not break any law or any third party's rights (for example copyrighted or trademarked artwork).</p>
           <p><b>4. Your data.</b> Your account details and workspace data (stores, mockups, designs, listings) are stored securely in our cloud database so you can sign in from any device. We do not sell your data. Third-party services we use to run the app: Supabase (database & login), Render (server), GitHub Pages (website), Google (optional sign-in and AI SEO), Cloudflare (bot protection), and Etsy (only if you connect your shop).</p>

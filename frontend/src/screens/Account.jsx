@@ -279,11 +279,11 @@ function EtsyConnect({ storeId, storeName }) {
 }
 
 /**
- * ImportCard — bring old MP Phase I data into Nova Listing Manager.
+ * ImportCard — bring old MP Phase I data into Design2List.
  * Accepts BOTH Phase I file types:
  *   .mpbackup — "Backup ALL data": every store + its mockups/boxes/designs/sets
  *   .mpproj   — single-store "Save project" export
- * Each Phase I store becomes a NEW Nova Listing Manager store (cloud-synced).
+ * Each Phase I store becomes a NEW Design2List store (cloud-synced).
  * Old designs might not carry a Design# — they default to "Single image".
  */
 function ImportCard() {
@@ -319,7 +319,7 @@ function ImportCard() {
         stores = [{ name: file.name.replace(/\.[^.]+$/, ''), ws: data }]
       }
       if (!stores.length) throw new Error('No store data found in this file')
-      if (!confirm(`${stores.length} store(s) found — each will become a NEW store in Nova Listing Manager. Start import?`)) return
+      if (!confirm(`${stores.length} store(s) found — each will become a NEW store in Design2List. Start import?`)) return
 
       for (let si = 0; si < stores.length; si++) {
         const s = stores[si]
@@ -379,7 +379,7 @@ function ImportCard() {
       <h3 style={{ marginTop: 0 }}>📂 Import (from the old MP Phase I app)</h3>
       <p className="muted">
         Choose the <b>.mpbackup</b> file you get by pressing <b>"💾 Backup ALL data"</b> on the Phase I Dashboard
-        — all stores (with mockups, boxes, designs and sets) will be imported into Nova Listing Manager.
+        — all stores (with mockups, boxes, designs and sets) will be imported into Design2List.
         Single-store <b>.mpproj</b> files work too.
       </p>
       {prog ? (

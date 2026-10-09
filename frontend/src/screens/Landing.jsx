@@ -1,6 +1,6 @@
 /**
  * Landing.jsx — public front page (shown when nobody is signed in).
- * Explains what Nova Listing Manager is (also the page Etsy reviews),
+ * Explains what Design2List is (also the page Etsy reviews),
  * with "Log in" at the top right. Log in opens the normal Login form
  * in a panel that slides in from the right.
  */
@@ -32,7 +32,7 @@ const RULES = [
 ]
 
 const FAQ = [
-  ['Who uses Nova Listing Manager?', 'It is the internal tool of Nova Agencies. Accounts are for our team and for clients whose shops we manage with their permission.'],
+  ['Who uses Design2List?', 'It is the internal tool of Nova Agencies. Accounts are for our team and for clients whose shops we manage with their permission.'],
   ['Does it publish listings automatically?', 'No. It only creates drafts. A team member reviews each listing and presses Publish.'],
   ['Does it copy other sellers’ listings?', 'No. It works only with our own designs and our own mockup photos, and it can only copy listings inside the same connected shop.'],
   ['What happens to shop data?', 'Etsy data is used only for the actions a user starts (loading, editing, drafting, publishing). See our Terms & Privacy page for details.'],
@@ -57,7 +57,7 @@ export default function Landing() {
     <div className="lp">
       <header className="lp-head">
         <div className="lp-wrap lp-head-in">
-          <a className="lp-brand" href="#top" onClick={go('top')}><span className="login-badge-icon">✈</span> Nova Listing Manager</a>
+          <a className="lp-brand" href="#top" onClick={go('top')}><span className="login-badge-icon">✈</span> Design2List</a>
           <nav className="lp-nav">
             <a href="#how" onClick={go('how')}>How it works</a>
             <a href="#features" onClick={go('features')}>Features</a>
@@ -125,7 +125,7 @@ export default function Landing() {
         <div className="lp-wrap lp-rules">
           <div>
             <h2>Built to follow Etsy’s rules</h2>
-            <p className="lp-lead">Nova Listing Manager uses the official Etsy Open API v3 and is designed around Etsy’s API Terms of Use.</p>
+            <p className="lp-lead">Design2List uses the official Etsy Open API v3 and is designed around Etsy’s API Terms of Use.</p>
           </div>
           <ul>{RULES.map((r) => <li key={r}>{r}</li>)}</ul>
         </div>
