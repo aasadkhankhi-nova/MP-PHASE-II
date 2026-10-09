@@ -152,6 +152,11 @@ export default function Login({ embedded = false }) {
               Continue with Google
             </button>
 
+            {!up && (
+              <p className="muted" style={{ marginTop: 10, fontSize: 12, textAlign: 'center' }}>
+                By signing in or continuing with Google you agree to the <a className="lnk" onClick={(e) => { e.preventDefault(); setShowTerms(true) }}>Terms of Service & Privacy Policy</a>.
+              </p>
+            )}
             {msg && <p className="muted" style={{ marginTop: 10 }}>{msg}</p>}
             <p className="muted" style={{ marginTop: 12, textAlign: 'center' }}>
               {up ? (
@@ -227,9 +232,9 @@ function TermsModal({ onClose }) {
           <p><b>2. Your account.</b> You must be at least 18 years old. Keep your password safe — you are responsible for activity on your account.</p>
           <p><b>3. Your content.</b> The designs and photos you upload remain yours. You confirm you have the rights to use them, and that they do not break any law or any third party's rights (for example copyrighted or trademarked artwork).</p>
           <p><b>4. Your data.</b> Your account details and workspace data (stores, mockups, designs, listings) are stored securely in our cloud database so you can sign in from any device. We do not sell your data. Third-party services we use to run the app: Supabase (database & login), Render (server), GitHub Pages (website), Google (optional sign-in and AI SEO), Cloudflare (bot protection), and Etsy (only if you connect your shop).</p>
-          <p><b>5. API keys & Etsy.</b> If you add your own AI key, it stays in your browser only. If you connect Etsy, we store the connection tokens securely and only use them for the actions you start (like sending a draft listing). Publishing on Etsy is always your final decision, and Etsy's own fees and policies apply there.</p>
+          <p><b>5. API keys & Etsy.</b> If you add your own AI key, it stays in your browser only. If you connect Etsy, we act only as your service provider: we store the connection tokens securely on our server and use them only for the actions you start (like sending a draft listing). We read your shop's listings, photos, inventory and shipping/return profiles to show and edit them; we do not access orders or buyer details. Shop data is refreshed from Etsy at least every 10 minutes and is not kept after you disconnect. Publishing on Etsy is always your final decision, and Etsy's own fees and policies apply there. We never charge for anything Etsy provides for free.</p>
           <p><b>6. Fair use.</b> Do not misuse the service (no bots, no attacks, no illegal content). We may suspend accounts that break these rules.</p>
-          <p><b>7. Changes & contact.</b> We may update these terms; big changes will be announced in the app. Support, questions or account deletion: thenova.agencies@gmail.com.</p>
+          <p><b>7. Changes & contact.</b> We may update these terms; big changes will be announced in the app. Support, questions or account deletion: chaman.khan.khi39@gmail.com (we reply within 2 business days). If we ever discontinue the Etsy connection, we will give you at least 30 days’ notice.</p>
           <p><b>8. Etsy.</b> The term "Etsy" is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.</p>
           <p style={{ fontSize: 12 }}>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY DESIGN2LIST (THE "APPLICATION DEVELOPER"). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
         </div>

@@ -136,7 +136,7 @@ export default function Landing() {
           <div className="lp-foot-row">
             <span>© 2026 Design2List</span>
             <a href="privacy.html" target="_blank" rel="noreferrer">Terms &amp; Privacy</a>
-            <a href="mailto:thenova.agencies@gmail.com">thenova.agencies@gmail.com</a>
+            <a href="mailto:chaman.khan.khi39@gmail.com">chaman.khan.khi39@gmail.com</a>
           </div>
           <p>The term “Etsy” is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.</p>
           <p>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY DESIGN2LIST (THE “APPLICATION DEVELOPER”). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
