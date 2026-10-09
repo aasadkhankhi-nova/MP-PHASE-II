@@ -85,7 +85,7 @@ export default function Login({ embedded = false }) {
     <div className={embedded ? 'login-embed' : 'login-gate'}>
       <div className="login-card">
         <div className="login-logo"><span className="login-badge-icon">✈</span> Design2List</div>
-        <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>Listing management for Nova Agencies shops</p>
+        <p className="muted" style={{ margin: '2px 0 0', fontSize: 12.5 }}>One design in. An Etsy listing out.</p>
 
         {mode === 'verify' ? (
           <>
@@ -223,7 +223,7 @@ function TermsModal({ onClose }) {
       <div className="modal-card" style={{ maxWidth: 640 }} onClick={(e) => e.stopPropagation()}>
         <h2 style={{ marginTop: 0 }}>Design2List — Terms of Service & Privacy Policy</h2>
         <div className="muted" style={{ fontSize: 13.5, lineHeight: 1.7 }}>
-          <p><b>1. The service.</b> Design2List is an internal tool of Nova Agencies. It helps our team create product listings from designs made by our own designers: it places the designs on our mockup photos, drafts SEO text with AI for a person to review, and sends draft listings to Etsy shops we own or that have authorized us through Etsy. It never copies other shops' listings or designs and never publishes anything without a person pressing Publish. The service is provided "as is", without warranties.</p>
+          <p><b>1. The service.</b> Design2List helps you create product listings from your own designs: it places them on your mockup photos, drafts listing text with AI for you to review, and sends draft listings to the Etsy shop you connect through Etsy's official sign-in. It never copies other shops' listings or designs, and nothing is published until you press Publish. The service is provided "as is", without warranties.</p>
           <p><b>2. Your account.</b> You must be at least 18 years old. Keep your password safe — you are responsible for activity on your account.</p>
           <p><b>3. Your content.</b> The designs and photos you upload remain yours. You confirm you have the rights to use them, and that they do not break any law or any third party's rights (for example copyrighted or trademarked artwork).</p>
           <p><b>4. Your data.</b> Your account details and workspace data (stores, mockups, designs, listings) are stored securely in our cloud database so you can sign in from any device. We do not sell your data. Third-party services we use to run the app: Supabase (database & login), Render (server), GitHub Pages (website), Google (optional sign-in and AI SEO), Cloudflare (bot protection), and Etsy (only if you connect your shop).</p>
@@ -231,7 +231,7 @@ function TermsModal({ onClose }) {
           <p><b>6. Fair use.</b> Do not misuse the service (no bots, no attacks, no illegal content). We may suspend accounts that break these rules.</p>
           <p><b>7. Changes & contact.</b> We may update these terms; big changes will be announced in the app. Support, questions or account deletion: thenova.agencies@gmail.com.</p>
           <p><b>8. Etsy.</b> The term "Etsy" is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.</p>
-          <p style={{ fontSize: 12 }}>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY NOVA AGENCIES (THE "APPLICATION DEVELOPER"). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
+          <p style={{ fontSize: 12 }}>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY DESIGN2LIST (THE "APPLICATION DEVELOPER"). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
         </div>
         <button className="btn" onClick={onClose} style={{ marginTop: 10 }}>Close</button>
       </div>
