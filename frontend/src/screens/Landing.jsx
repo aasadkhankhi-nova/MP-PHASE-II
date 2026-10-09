@@ -115,7 +115,7 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="lp-sec alt" id="faq">
+      <section className="lp-sec" id="faq">
         <div className="lp-wrap">
           <h2>Questions sellers ask</h2>
           <div className="lp-faq">
