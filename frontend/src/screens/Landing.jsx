@@ -134,12 +134,12 @@ export default function Landing() {
       <footer className="lp-foot">
         <div className="lp-wrap">
           <div className="lp-foot-row">
-            <span>© 2026 Design2List</span>
+            <span>© 2026 Design2List · a product of <a href="https://novaagencies.io" target="_blank" rel="noreferrer">Nova Agencies</a></span>
             <a href="privacy.html" target="_blank" rel="noreferrer">Terms &amp; Privacy</a>
-            <a href="mailto:chaman.khan.khi39@gmail.com">chaman.khan.khi39@gmail.com</a>
+            <a href="mailto:contact@novaagencies.io">contact@novaagencies.io</a>
           </div>
           <p>The term “Etsy” is a trademark of Etsy, Inc. This application uses the Etsy API but is not endorsed or certified by Etsy, Inc.</p>
-          <p>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY DESIGN2LIST (THE “APPLICATION DEVELOPER”). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
+          <p>DISCLAIMER: THIS APPLICATION IS SOLELY PROVIDED BY NOVA AGENCIES (THE “APPLICATION DEVELOPER”). ETSY, INC. AND ITS AFFILIATES ARE NOT THE APPLICATION DEVELOPER, DO NOT PROVIDE THIS APPLICATION OR ITS SERVICE, AND MAKE NO WARRANTIES OF ANY KIND ABOUT THIS APPLICATION OR ANY DATA ACCESSED THROUGH IT.</p>
         </div>
       </footer>
 
